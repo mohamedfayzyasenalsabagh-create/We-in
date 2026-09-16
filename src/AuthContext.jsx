@@ -30,8 +30,26 @@ export function AuthProvider({ children }) {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
-        const snap = await getDoc(doc(db, "users", u.uid));
-        setProfile(snap.exists() ? { id: u.uid, ...snap.data() } : null);
+        const ref = doc(db, "users", u.uid);
+        let snap = await getDoc(ref);
+        if (!snap.exists()) {
+          // First time we've seen this auth user (e.g. a fresh Google/Facebook
+          // sign-in) — create their default profile right here, in the ONE
+          // place that manages profile state, so there's no race between two
+          // separate code paths both trying to read/write it at once.
+          await setDoc(ref, {
+            name: u.displayName || "",
+            email: u.email || "",
+            phone: null,
+            role: "customer",
+            wishlist: [],
+            addresses: [],
+            points: 0,
+            createdAt: serverTimestamp(),
+          });
+          snap = await getDoc(ref);
+        }
+        setProfile({ id: u.uid, ...snap.data() });
       } else {
         setProfile(null);
       }
@@ -71,28 +89,11 @@ export function AuthProvider({ children }) {
 
   // Google/Facebook: real OAuth sign-in via Firebase. Email is already
   // verified by Google/Meta themselves, so no separate verification email
-  // is needed for these. If it's the person's first time, we create their
-  // profile with phone left empty — the app then forces a one-time "add your
-  // phone number" step before letting them do anything else, since delivery
-  // needs a real contact number no matter how someone signed in.
+  // is needed. Profile creation for first-time users is handled centrally
+  // by the onAuthStateChanged listener above — nothing else to do here.
   async function socialSignIn(providerName) {
     const provider = providerName === "google" ? new GoogleAuthProvider() : new FacebookAuthProvider();
     const cred = await signInWithPopup(auth, provider);
-    const ref = doc(db, "users", cred.user.uid);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) {
-      await setDoc(ref, {
-        name: cred.user.displayName || "",
-        email: cred.user.email || "",
-        phone: null,
-        role: "customer",
-        wishlist: [],
-        addresses: [],
-        points: 0,
-        createdAt: serverTimestamp(),
-      });
-    }
-    await refreshProfile();
     return cred.user;
   }
   const loginWithGoogle = () => socialSignIn("google");
