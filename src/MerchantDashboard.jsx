@@ -1,9 +1,41 @@
 import { useState } from "react";
 import { collection, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
-import { db } from "./firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, storage } from "./firebase";
 import { useAuth } from "./AuthContext";
 import { useQuery } from "./useQuery";
 import { useCollection } from "./useCollection";
+
+// Resizes/compresses an image client-side before it ever leaves the device,
+// so uploads stay fast and small (and never bloat Firestore — Storage keeps
+// the actual file, Firestore just holds the resulting download URL).
+function compressImageFile(file, maxDim = 900, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("تعذّرت قراءة الصورة"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("تعذّر تحميل الصورة"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function MerchantDashboard() {
   const { profile, logout } = useAuth();
@@ -57,6 +89,26 @@ function MerchantProducts() {
   const { data: categories } = useCollection("categories", "name");
   const [form, setForm] = useState({ name: "", price: "", stock: "", categoryId: "", image: "", description: "" });
   const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  const handleImageFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setError("");
+    try {
+      const compressed = await compressImageFile(file);
+      const path = `products/${user.uid}/${Date.now()}.jpg`;
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, compressed);
+      const url = await getDownloadURL(storageRef);
+      setForm((f) => ({ ...f, image: url }));
+    } catch (err) {
+      setError("تعذّر رفع الصورة: " + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const add = async () => {
     setError("");
@@ -68,7 +120,7 @@ function MerchantProducts() {
         currency: profile?.currency || "SYP",
         stock: Number(form.stock) || 0,
         categoryId: form.categoryId,
-        image: form.image.trim(),
+        image: form.image,
         description: form.description.trim(),
         merchantId: user.uid,
         merchantName: profile?.name || "",
@@ -99,7 +151,13 @@ function MerchantProducts() {
             </option>
           ))}
         </select>
-        <input style={inputStyle} placeholder="رابط صورة (اختياري)" value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+        {form.image && <img src={form.image} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", border: "1px solid #ddd" }} />}
+        <div>
+          <input type="file" accept="image/*" onChange={handleImageFile} />
+          {uploading && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>جارِ رفع الصورة…</div>}
+        </div>
       </div>
       <textarea
         style={{ ...inputStyle, width: "100%", minHeight: 60, marginBottom: 12 }}
