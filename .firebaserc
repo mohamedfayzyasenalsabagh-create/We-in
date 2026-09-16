@@ -1,5 +1,12 @@
 {
   "projects": {
     "default": "we-in-e0c9b"
+  },
+  "targets": {
+    "we-in-e0c9b": {
+      "hosting": {
+        "weinapp": ["weinsy"]
+      }
+    }
   }
 }
