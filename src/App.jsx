@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useAuth } from "./AuthContext";
 import LoginScreen from "./LoginScreen";
 import AdminDashboard from "./AdminDashboard";
+import MerchantDashboard from "./MerchantDashboard";
+import CustomerApp from "./CustomerApp";
+import DeliveryDashboard from "./DeliveryDashboard";
 
 export default function App() {
   const { user, profile, loading, logout, resendVerification, setMyPhone } = useAuth();
@@ -39,11 +42,18 @@ export default function App() {
   }
 
   // From here on the real user is authenticated + verified + has a phone on
-  // file. Route by role — admin is wired to real Firestore now; the other
-  // roles (merchant/customer/delivery) still show the placeholder until we
-  // build them the same way, next.
+  // file. Route by role — every dashboard is wired to real Firestore now.
   if (profile?.role === "admin") {
     return <AdminDashboard onLogout={logout} />;
+  }
+  if (profile?.role === "merchant") {
+    return <MerchantDashboard />;
+  }
+  if (profile?.role === "delivery") {
+    return <DeliveryDashboard />;
+  }
+  if (profile?.role === "customer") {
+    return <CustomerApp />;
   }
 
   return (
