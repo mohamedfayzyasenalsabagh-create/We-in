@@ -218,6 +218,28 @@ function useQuery(name, field, op, value) {
   return { data, loading };
 }
 
+function useDoc(collectionName, docId) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    const unsub = db.collection(collectionName).doc(docId).onSnapshot(
+      (snap) => setData(snap.exists ? snap.data() : null),
+      (err) => console.error(err)
+    );
+    return unsub;
+  }, [collectionName, docId]);
+  return data;
+}
+
+// Counts one visit per browser tab session (not every re-render) by tracking
+// a real total in Firestore — every visitor's browser increments the same
+// shared counter once when the app first loads.
+let visitCounted = false;
+function countVisitOnce() {
+  if (visitCounted) return;
+  visitCounted = true;
+  db.collection("stats").doc("visits").set({ count: firebase.firestore.FieldValue.increment(1) }, { merge: true }).catch(() => {});
+}
+
 /* ============================= Helpers ============================= */
 const isValidPhone = (phone) => /^09\d{8}$/.test((phone || "").trim()) && !/^(\d)\1{9}$/.test((phone || "").trim());
 function genPassword() { return String(Math.floor(10000000 + Math.random() * 90000000)); }
@@ -231,7 +253,30 @@ function firebaseErrorToArabic(err) {
   return "صار خطأ: " + ((err && err.message) || "غير معروف");
 }
 function compressImageFile(file, maxDim, quality) {
-  maxDim = maxDim || 900; quality = quality || 0.7;
+  maxDim = maxDim || 700; quality = quality || 0.6;
+
+  function drawAndExport(imgSource, srcWidth, srcHeight) {
+    let width = srcWidth, height = srcHeight;
+    if (width > height && width > maxDim) { height = Math.round((height * maxDim) / width); width = maxDim; }
+    else if (height > maxDim) { width = Math.round((width * maxDim) / height); height = maxDim; }
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    canvas.getContext("2d").drawImage(imgSource, 0, 0, width, height);
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  }
+
+  // Fast path: createImageBitmap decodes the file directly (no base64
+  // round-trip through FileReader), which is noticeably quicker on mobile —
+  // especially for the large photos modern phone cameras produce.
+  if (window.createImageBitmap) {
+    return createImageBitmap(file)
+      .then((bitmap) => drawAndExport(bitmap, bitmap.width, bitmap.height))
+      .catch(() => compressImageFileLegacy(file, maxDim, quality));
+  }
+  return compressImageFileLegacy(file, maxDim, quality);
+}
+
+function compressImageFileLegacy(file, maxDim, quality) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("تعذّرت قراءة الصورة"));
@@ -269,6 +314,28 @@ const btnDanger = { background: "#fff", color: "red", border: "1px solid red", b
 const btnGhost = { background: "transparent", border: "1.5px solid #000", borderRadius: 999, padding: "10px 20px" };
 
 /* ============================= Login screen ============================= */
+function Logo({ size, dark }) {
+  size = size || 44;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+      <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+        <defs>
+          <linearGradient id="weinGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C48CF5" />
+            <stop offset="1" stopColor="#6B1FB0" />
+          </linearGradient>
+        </defs>
+        <rect width="48" height="48" rx="14" fill="url(#weinGrad)" />
+        <path d="M14 20 L16 34 Q16.5 36 18.5 36 H29.5 Q31.5 36 32 34 L34 20" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M18 20 V16 Q18 11 24 11 Q30 11 30 16 V20" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      </svg>
+      <span style={{ fontWeight: 900, fontSize: size * 0.5, color: dark ? "#fff" : "#000" }}>
+        We<span style={{ color: dark ? "var(--purple-soft)" : "var(--purple)" }}>-in</span>
+      </span>
+    </div>
+  );
+}
+
 function LoginScreen() {
   const { signup, login, loginWithGoogle, loginWithFacebook } = useAuth();
   const [mode, setMode] = useState("login");
@@ -320,11 +387,8 @@ function LoginScreen() {
   return (
     <div style={wrapStyle}>
       <div style={cardStyle} className="fade-in">
-        <h1 style={{ textAlign: "center", fontWeight: 900 }}>We<span style={{ color: "var(--purple)" }}>-in</span></h1>
-        <div style={{ display: "flex", gap: 6, marginBottom: 20, background: "#F0EEE8", borderRadius: 11, padding: 4 }}>
-          <button style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: mode === "login" ? "var(--purple)" : "transparent", color: mode === "login" ? "#fff" : "#000" }} onClick={() => setMode("login")}>تسجيل الدخول</button>
-          <button style={{ flex: 1, padding: 10, borderRadius: 8, border: "none", background: mode === "signup" ? "var(--purple)" : "transparent", color: mode === "signup" ? "#fff" : "#000" }} onClick={() => setMode("signup")}>حساب جديد (عملاء)</button>
-        </div>
+        <div style={{ marginBottom: 6 }}><Logo size={48} /></div>
+        <p style={{ textAlign: "center", color: "#9B3FE8", fontWeight: 700, fontSize: 14, marginTop: 0, marginBottom: 22 }}>السوق كلو بمكان واحد 🛍️</p>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
           <button type="button" style={{ background: "#fff", color: "#000", border: "1.5px solid #000", borderRadius: 999, padding: 12, fontWeight: 700 }} onClick={() => handleSocial(loginWithGoogle)} disabled={busy}>المتابعة عبر Google</button>
           <button type="button" style={{ background: "#fff", color: "#000", border: "1.5px solid #000", borderRadius: 999, padding: 12, fontWeight: 700 }} onClick={() => handleSocial(loginWithFacebook)} disabled={busy}>المتابعة عبر Facebook</button>
@@ -345,6 +409,13 @@ function LoginScreen() {
           {error && <div style={{ color: "#FF4D4D", fontSize: 13 }}>{error}</div>}
           <button type="submit" style={btnPrimary} disabled={busy}>{busy ? "جارِ التنفيذ…" : mode === "login" ? "دخول" : "إنشاء الحساب"}</button>
         </form>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
+          {mode === "login" ? (
+            <span>ما عندك حساب؟ <a href="#" onClick={(e) => { e.preventDefault(); setMode("signup"); setError(""); }} style={{ color: "var(--purple)", fontWeight: 700, textDecoration: "none" }}>إنشاء حساب جديد</a></span>
+          ) : (
+            <span>عندك حساب أصلاً؟ <a href="#" onClick={(e) => { e.preventDefault(); setMode("login"); setError(""); }} style={{ color: "var(--purple)", fontWeight: 700, textDecoration: "none" }}>تسجيل الدخول</a></span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -427,6 +498,8 @@ function MerchantsAdmin() {
   const [form, setForm] = useState({ name: "", phone: "", email: "", type: "commission", commissionRate: 10, currency: "SYP" });
   const [createdInfo, setCreatedInfo] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
 
   const create = async () => {
     setCreatedInfo(null);
@@ -444,6 +517,19 @@ function MerchantsAdmin() {
     } catch (err) { setCreatedInfo({ error: firebaseErrorToArabic(err) }); } finally { setBusy(false); }
   };
   const toggleStatus = async (m) => { await db.collection("users").doc(m.id).update({ status: m.status === "approved" ? "suspended" : "approved" }); };
+  const resetPassword = async (m) => {
+    try { await auth.sendPasswordResetEmail(m.email); alert("انبعث رابط إعادة تعيين كلمة المرور لإيميل التاجر: " + m.email); }
+    catch (err) { alert("تعذّر الإرسال: " + err.message); }
+  };
+  const deleteAccount = async (m) => {
+    if (!window.confirm("متأكد بدك تحذف حساب \"" + m.name + "\"؟ هاد بيلغي كل صلاحياته بالتطبيق فوراً.")) return;
+    await db.collection("users").doc(m.id).delete();
+  };
+  const startEdit = (m) => { setEditingId(m.id); setEditForm({ type: m.type, commissionRate: m.commissionRate || 10, currency: m.currency }); };
+  const saveEdit = async (id) => {
+    await db.collection("users").doc(id).update({ type: editForm.type, commissionRate: Number(editForm.commissionRate), currency: editForm.currency });
+    setEditingId(null);
+  };
 
   return (
     <div style={{ padding: 20 }}>
@@ -474,12 +560,35 @@ function MerchantsAdmin() {
       {loading ? <div>جارِ التحميل…</div> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {merchants.map((m) => (
-            <div key={m.id} className="lift" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
-              <div>
-                <div style={{ fontWeight: 700 }}>{m.name}</div>
-                <div style={{ color: "#888", fontSize: 13 }}>{m.phone} — {m.type === "subscription" ? "اشتراك" : "عمولة " + m.commissionRate + "%"} — {m.currency}</div>
+            <div key={m.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{m.name}</div>
+                  <div style={{ color: "#888", fontSize: 13 }}>{m.phone} — {m.type === "subscription" ? "اشتراك" : "عمولة " + m.commissionRate + "%"} — {m.currency}</div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => (editingId === m.id ? setEditingId(null) : startEdit(m))} style={btnGhost}>{editingId === m.id ? "إغلاق" : "تعديل"}</button>
+                  <button onClick={() => toggleStatus(m)} style={btnGhost}>{m.status === "approved" ? "إيقاف" : "تفعيل"}</button>
+                  <button onClick={() => resetPassword(m)} style={btnGhost}>كلمة مرور جديدة</button>
+                  <button onClick={() => deleteAccount(m)} style={btnDanger}>حذف الحساب</button>
+                </div>
               </div>
-              <button onClick={() => toggleStatus(m)} style={btnGhost}>{m.status === "approved" ? "إيقاف" : "تفعيل"}</button>
+              {editingId === m.id && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px dashed #ddd" }}>
+                  <select style={inputStyle} value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}>
+                    <option value="commission">عمولة على البيع</option>
+                    <option value="subscription">اشتراك شهري</option>
+                  </select>
+                  {editForm.type === "commission" && (
+                    <input type="number" style={inputStyle} placeholder="نسبة العمولة %" value={editForm.commissionRate} onChange={(e) => setEditForm({ ...editForm, commissionRate: e.target.value })} />
+                  )}
+                  <select style={inputStyle} value={editForm.currency} onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}>
+                    <option value="SYP">ليرة سورية</option>
+                    <option value="USD">دولار أمريكي</option>
+                  </select>
+                  <button onClick={() => saveEdit(m.id)} style={btnPrimary}>حفظ</button>
+                </div>
+              )}
             </div>
           ))}
           {merchants.length === 0 && <div style={{ color: "#888" }}>لا يوجد تجار بعد.</div>}
@@ -510,6 +619,15 @@ function DeliveryAdmin() {
       setForm({ name: "", phone: "", email: "" });
     } catch (err) { setCreatedInfo({ error: firebaseErrorToArabic(err) }); } finally { setBusy(false); }
   };
+  const toggleStatus = async (r) => { await db.collection("users").doc(r.id).update({ status: r.status === "active" ? "inactive" : "active" }); };
+  const resetPassword = async (r) => {
+    try { await auth.sendPasswordResetEmail(r.email); alert("انبعث رابط إعادة تعيين كلمة المرور لإيميل المندوب: " + r.email); }
+    catch (err) { alert("تعذّر الإرسال: " + err.message); }
+  };
+  const deleteAccount = async (r) => {
+    if (!window.confirm("متأكد بدك تحذف حساب \"" + r.name + "\"؟ هاد بيلغي كل صلاحياته بالتطبيق فوراً.")) return;
+    await db.collection("users").doc(r.id).delete();
+  };
 
   return (
     <div style={{ padding: 20 }}>
@@ -530,9 +648,16 @@ function DeliveryAdmin() {
       {loading ? <div>جارِ التحميل…</div> : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {reps.map((r) => (
-            <div key={r.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
-              <div style={{ fontWeight: 700 }}>{r.name}</div>
-              <div style={{ color: "#888", fontSize: 13 }}>{r.phone}</div>
+            <div key={r.id} className="lift" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{r.name}</div>
+                <div style={{ color: "#888", fontSize: 13 }}>{r.phone}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => toggleStatus(r)} style={btnGhost}>{r.status === "active" ? "إيقاف" : "تفعيل"}</button>
+                <button onClick={() => resetPassword(r)} style={btnGhost}>كلمة مرور جديدة</button>
+                <button onClick={() => deleteAccount(r)} style={btnDanger}>حذف الحساب</button>
+              </div>
             </div>
           ))}
           {reps.length === 0 && <div style={{ color: "#888" }}>لا يوجد مندوبون بعد.</div>}
@@ -597,13 +722,54 @@ function OrdersAdmin() {
 }
 
 /* ============================= Admin dashboard shell ============================= */
+function ChangePasswordPanel() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setError(""); setMsg("");
+    if (next.trim().length < 8) { setError("كلمة المرور الجديدة لازم تكون 8 أحرف/أرقام على الأقل."); return; }
+    setBusy(true);
+    try {
+      // Firebase requires a recent login for sensitive actions like changing
+      // a password — re-authenticating with the current password first
+      // avoids a confusing "requires-recent-login" error.
+      const cred = firebase.auth.EmailAuthProvider.credential(auth.currentUser.email, current);
+      await auth.currentUser.reauthenticateWithCredential(cred);
+      await auth.currentUser.updatePassword(next.trim());
+      setMsg("تم تغيير كلمة المرور بنجاح.");
+      setCurrent(""); setNext("");
+    } catch (err) { setError(firebaseErrorToArabic(err)); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ padding: 20, maxWidth: 380 }}>
+      <h2>تغيير كلمة المرور</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <input type="password" style={inputStyle} placeholder="كلمة المرور الحالية" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        <input type="password" style={inputStyle} placeholder="كلمة المرور الجديدة (8 أحرف على الأقل)" value={next} onChange={(e) => setNext(e.target.value)} />
+        {error && <div style={{ color: "red", fontSize: 13 }}>{error}</div>}
+        {msg && <div style={{ color: "#22B573", fontSize: 13 }}>{msg}</div>}
+        <button onClick={submit} disabled={busy} style={btnPrimary}>{busy ? "جارِ الحفظ…" : "حفظ كلمة المرور الجديدة"}</button>
+      </div>
+    </div>
+  );
+}
+
 function AdminDashboard({ onLogout }) {
   const [tab, setTab] = useState("categories");
-  const tabs = [["categories", "الفئات"], ["merchants", "التجار"], ["delivery", "المندوبون"], ["orders", "الطلبات"]];
+  const tabs = [["categories", "الفئات"], ["merchants", "التجار"], ["delivery", "المندوبون"], ["orders", "الطلبات"], ["settings", "حسابي"]];
+  const stats = useDoc("stats", "visits");
   return (
     <div style={{ minHeight: "100vh", background: "#F2F1EC" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", background: "#000", color: "#fff" }}>
-        <div style={{ fontWeight: 800, fontSize: 18 }}>We<span style={{ color: "#9B3FE8" }}>-in</span> — لوحة الإدارة</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Logo size={32} dark={true} />
+          <span style={{ fontSize: 12, color: "#aaa", borderRight: "1px solid rgba(255,255,255,.2)", paddingRight: 14 }}>👁️ زيارات الموقع: <strong style={{ color: "#fff" }}>{stats ? stats.count : "…"}</strong></span>
+        </div>
         <button onClick={onLogout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>تسجيل الخروج</button>
       </div>
       <div style={{ display: "flex", gap: 10, padding: "14px 20px", background: "#fff", overflowX: "auto" }}>
@@ -613,6 +779,7 @@ function AdminDashboard({ onLogout }) {
       </div>
       {tab === "categories" && <CategoriesAdmin />}
       {tab === "merchants" && <MerchantsAdmin />}
+      {tab === "settings" && <ChangePasswordPanel />}
       {tab === "delivery" && <DeliveryAdmin />}
       {tab === "orders" && <OrdersAdmin />}
     </div>
@@ -624,41 +791,70 @@ function MerchantProducts() {
   const { user, profile } = useAuth();
   const { data: products, loading } = useQuery("products", "merchantId", "==", user ? user.uid : null);
   const { data: categories } = useCollection("categories", "name");
-  const [form, setForm] = useState({ name: "", price: "", stock: "", categoryId: "", image: "", description: "" });
+  const emptyForm = { name: "", price: "", stock: "", categoryId: "", image: "", description: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
 
   const handleImageFile = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    setUploading(true); setError("");
+    setUploading(true); setError(""); setUploadPct(0);
     try {
       const compressed = await compressImageFile(file);
       const path = "products/" + user.uid + "/" + Date.now() + ".jpg";
       const storageRef = storage.ref(path);
-      await storageRef.put(compressed);
+      const task = storageRef.put(compressed);
+      await new Promise((resolve, reject) => {
+        task.on(
+          "state_changed",
+          (snap) => setUploadPct(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+          reject,
+          resolve
+        );
+      });
       const url = await storageRef.getDownloadURL();
       setForm((f) => ({ ...f, image: url }));
     } catch (err) { setError("تعذّر رفع الصورة: " + err.message); } finally { setUploading(false); }
   };
 
-  const add = async () => {
+  const startEdit = (p) => {
+    setEditingId(p.id);
+    setForm({ name: p.name, price: String(p.price), stock: String(p.stock), categoryId: p.categoryId || "", image: p.image || "", description: p.description || "" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const cancelEdit = () => { setEditingId(null); setForm(emptyForm); setError(""); };
+
+  const save = async () => {
     setError(""); if (!form.name.trim() || !form.price) return;
+    const payload = {
+      name: form.name.trim(), price: Number(form.price), currency: (profile && profile.currency) || "SYP",
+      stock: Number(form.stock) || 0, categoryId: form.categoryId, image: form.image, description: form.description.trim(),
+    };
     try {
-      await db.collection("products").add({
-        name: form.name.trim(), price: Number(form.price), currency: (profile && profile.currency) || "SYP",
-        stock: Number(form.stock) || 0, categoryId: form.categoryId, image: form.image, description: form.description.trim(),
-        merchantId: user.uid, merchantName: (profile && profile.name) || "",
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      });
-      setForm({ name: "", price: "", stock: "", categoryId: "", image: "", description: "" });
+      if (editingId) {
+        await db.collection("products").doc(editingId).update(payload);
+        setEditingId(null);
+      } else {
+        await db.collection("products").add({
+          ...payload, merchantId: user.uid, merchantName: (profile && profile.name) || "",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      setForm(emptyForm);
     } catch (err) { setError("تعذّر الحفظ: " + err.message); }
   };
-  const remove = async (id) => { await db.collection("products").doc(id).delete(); };
+  const remove = async (id) => {
+    if (!window.confirm("متأكد بدك تحذف هالمنتج نهائياً؟")) return;
+    await db.collection("products").doc(id).delete();
+    if (editingId === id) cancelEdit();
+  };
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>إضافة منتج</h2>
+      <h2>{editingId ? "تعديل منتج" : "إضافة منتج"}</h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
         <input style={inputStyle} placeholder="اسم المنتج" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <input type="number" style={inputStyle} placeholder="السعر" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
@@ -672,25 +868,31 @@ function MerchantProducts() {
         {form.image && <img src={form.image} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", border: "1px solid #ddd" }} />}
         <div>
           <input type="file" accept="image/*" onChange={handleImageFile} />
-          {uploading && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>جارِ رفع الصورة…</div>}
+          {uploading && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>جارِ رفع الصورة… {uploadPct}%</div>}
         </div>
       </div>
       <textarea style={{ ...inputStyle, width: "100%", minHeight: 60, marginBottom: 12 }} placeholder="الوصف" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
       <br />
-      <button onClick={add} style={btnPrimary}>نشر المنتج</button>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={save} style={btnPrimary}>{editingId ? "حفظ التعديلات" : "نشر المنتج"}</button>
+        {editingId && <button onClick={cancelEdit} style={btnGhost}>إلغاء التعديل</button>}
+      </div>
       {error && <div style={{ color: "red", marginTop: 10 }}>{error}</div>}
       <h2 style={{ marginTop: 32 }}>منتجاتي ({products.length})</h2>
       {loading ? <div>جارِ التحميل…</div> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px,1fr))", gap: 14 }}>
           {products.map((p) => (
-            <div key={p.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, overflow: "hidden" }}>
+            <div key={p.id} className="lift" style={{ background: "#fff", border: editingId === p.id ? "2px solid var(--purple)" : "1px solid #eee", borderRadius: 12, overflow: "hidden" }}>
               <div style={{ height: 110, background: "#f4f4f4", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {p.image ? <img src={p.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "#999", fontSize: 12 }}>لا صورة</span>}
               </div>
               <div style={{ padding: 10 }}>
                 <div style={{ fontWeight: 700 }}>{p.name}</div>
                 <div style={{ color: "#9B3FE8", fontWeight: 700 }}>{p.price} {p.currency}</div>
-                <button onClick={() => remove(p.id)} style={{ border: "none", background: "transparent", color: "red", fontSize: 13, padding: 0, marginTop: 6 }}>حذف</button>
+                <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                  <button onClick={() => startEdit(p)} style={{ border: "none", background: "transparent", color: "var(--purple)", fontSize: 13, padding: 0, fontWeight: 700 }}>تعديل</button>
+                  <button onClick={() => remove(p.id)} style={{ border: "none", background: "transparent", color: "red", fontSize: 13, padding: 0 }}>حذف</button>
+                </div>
               </div>
             </div>
           ))}
@@ -746,12 +948,13 @@ function MerchantDashboard() {
         <button onClick={logout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>تسجيل الخروج</button>
       </div>
       <div style={{ display: "flex", gap: 10, padding: "14px 20px", background: "#fff", overflowX: "auto" }}>
-        {[["products", "منتجاتي"], ["orders", "طلباتي"]].map(([id, label]) => (
+        {[["products", "منتجاتي"], ["orders", "طلباتي"], ["settings", "حسابي"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} style={{ padding: "9px 18px", borderRadius: 999, border: "1px solid #eee", background: tab === id ? "var(--purple)" : "#F2F1EC", color: tab === id ? "#fff" : "#000", flexShrink: 0 }}>{label}</button>
         ))}
       </div>
       {tab === "products" && <MerchantProducts />}
       {tab === "orders" && <MerchantOrders />}
+      {tab === "settings" && <ChangePasswordPanel />}
     </div>
   );
 }
@@ -925,13 +1128,18 @@ function DeliveryDashboard() {
   const { data: orders, loading } = useQuery("orders", "deliveryRepId", "==", user ? user.uid : null);
   const myOrders = orders.filter((o) => o.status === "out_for_delivery" || o.status === "delivered");
   const markDelivered = (id) => db.collection("orders").doc(id).update({ status: "delivered" });
+  const [showSettings, setShowSettings] = useState(false);
 
   return (
     <div style={{ minHeight: "100vh", background: "#F2F1EC" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", background: "#000", color: "#fff" }}>
         <div style={{ fontWeight: 800 }}>{profile && profile.name} — واجهة المندوب</div>
-        <button onClick={logout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>تسجيل الخروج</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => setShowSettings((s) => !s)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>{showSettings ? "طلباتي" : "حسابي"}</button>
+          <button onClick={logout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>تسجيل الخروج</button>
+        </div>
       </div>
+      {showSettings ? <ChangePasswordPanel /> : (
       <div style={{ padding: 20 }}>
         <h2>طلباتي</h2>
         {loading ? <div>جارِ التحميل…</div> : (
@@ -950,6 +1158,7 @@ function DeliveryDashboard() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -957,6 +1166,7 @@ function DeliveryDashboard() {
 /* ============================= App root ============================= */
 function App() {
   const { user, profile, loading, logout, resendVerification, setMyPhone } = useAuth();
+  useEffect(() => { countVisitOnce(); }, []);
   if (loading) return <FullscreenMessage title="We-in" subtitle="جارِ التحميل…" />;
   if (!user) return <LoginScreen />;
 
