@@ -1,6 +1,8 @@
 import { useState } from "react";
 import CategoriesAdmin from "./CategoriesAdmin";
 import MerchantsAdmin from "./MerchantsAdmin";
+import DeliveryAdmin from "./DeliveryAdmin";
+import OrdersAdmin from "./OrdersAdmin";
 
 export default function AdminDashboard({ onLogout }) {
   const [tab, setTab] = useState("categories");
@@ -19,6 +21,8 @@ export default function AdminDashboard({ onLogout }) {
         {[
           ["categories", "الفئات"],
           ["merchants", "التجار"],
+          ["delivery", "المندوبون"],
+          ["orders", "الطلبات"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -38,6 +42,8 @@ export default function AdminDashboard({ onLogout }) {
       </div>
       {tab === "categories" && <CategoriesAdmin />}
       {tab === "merchants" && <MerchantsAdmin />}
+      {tab === "delivery" && <DeliveryAdmin />}
+      {tab === "orders" && <OrdersAdmin />}
     </div>
   );
 }
