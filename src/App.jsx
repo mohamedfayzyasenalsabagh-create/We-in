@@ -17,7 +17,11 @@ export default function App() {
     return <LoginScreen />;
   }
 
-  if (!user.emailVerified) {
+  // Only customers (self-signup) need email verification — the admin already
+  // vouches for merchant/delivery/staff accounts they create directly, so
+  // those shouldn't be stuck waiting on a verification email that was never
+  // sent for them in the first place.
+  if (!user.emailVerified && profile?.role === "customer") {
     return (
       <FullscreenMessage title="أكّد إيميلك" subtitle={`بعتنالك رابط تفعيل حقيقي على ${user.email}. افتحه وبعدين اضغط تحديث.`}>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
