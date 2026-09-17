@@ -4,6 +4,25 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>We-in</title>
+<script>
+(function () {
+  function showError(text) {
+    var el = document.createElement("div");
+    el.style.cssText = "position:fixed;top:0;left:0;right:0;background:#B23A3A;color:#fff;padding:14px;font-family:monospace;font-size:12px;z-index:99999;direction:ltr;text-align:left;white-space:pre-wrap;max-height:50vh;overflow:auto;";
+    el.textContent = text;
+    var target = document.body || document.documentElement;
+    try { target.appendChild(el); } catch (appendErr) { alert(text); }
+  }
+  window.addEventListener("error", function (e) {
+    var msg = e.message ? e.message : "Resource failed to load: " + (e.target && (e.target.src || e.target.href));
+    showError("JS Error: " + msg + (e.filename ? "\n" + e.filename + ":" + e.lineno : ""));
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) {
+    var reason = e.reason && e.reason.message ? e.reason.message : e.reason;
+    showError("Promise Error: " + reason);
+  });
+})();
+</script>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" />
 
@@ -1718,15 +1737,4 @@ function AdminDashboard({ onLogout, permissions }) {
   const [, , t] = useLanguage();
   const isFullAdmin = !permissions;
   const allTabs = [["categories", t("tabCategories")], ["merchants", t("tabMerchants")], ["delivery", t("tabDelivery")], ["orders", t("tabOrders")], ["cases", t("tabCases")], ["coupons", t("tabCoupons")], ["storesettings", t("tabSettings")], ["reports", t("tabReports")], ["returns", t("tabReturns")]];
-  const visibleTabs = isFullAdmin ? allTabs : allTabs.filter(([id]) => permissions.includes(id));
-  const tabs = isFullAdmin ? [...visibleTabs, ["staff", t("tabStaff")], ["admins", t("tabAdmins")], ["auditlog", t("tabAuditLog")], ["backup", t("tabBackup")], ["settings", t("tabAccount")]] : [...visibleTabs, ["settings", t("tabAccount")]];
-  const [tab, setTab] = useState(tabs[0] ? tabs[0][0] : "settings");
-  const stats = useDoc("stats", "visits");
-  return (
-    <div style={{ minHeight: "100vh", background: "#F2F1EC" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", background: "#000", color: "#fff" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <Logo size={32} dark={true} />
-          {isFullAdmin && <span style={{ fontSize: 12, color: "#aaa", borderRight: "1px solid rgba(255,255,255,.2)", paddingRight: 14 }}>👁️ {t("siteVisits")}: <strong style={{ color: "#fff" }}>{stats ? stats.count : "…"}</strong></span>}
-        </div>
-        <div style
+  const visibleTabs = isFullAdmin ? allTabs : allTabs.filter(([id]) => permissions.includes(id
