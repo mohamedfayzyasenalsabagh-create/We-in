@@ -1,0 +1,3293 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#9B3FE8" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<title>We-in</title>
+<script>
+(function () {
+  function showError(text) {
+    var el = document.createElement("div");
+    el.style.cssText = "position:fixed;top:0;left:0;right:0;background:#B23A3A;color:#fff;padding:14px;font-family:monospace;font-size:12px;z-index:99999;direction:ltr;text-align:left;white-space:pre-wrap;max-height:50vh;overflow:auto;";
+    el.textContent = text;
+    var target = document.body || document.documentElement;
+    try { target.appendChild(el); } catch (appendErr) { alert(text); }
+  }
+  window.addEventListener("error", function (e) {
+    var msg = e.message ? e.message : "Resource failed to load: " + (e.target && (e.target.src || e.target.href));
+    showError("JS Error: " + msg + (e.filename ? "\n" + e.filename + ":" + e.lineno : ""));
+  }, true);
+  window.addEventListener("unhandledrejection", function (e) {
+    var reason = e.reason && e.reason.message ? e.reason.message : e.reason;
+    showError("Promise Error: " + reason);
+  });
+})();
+</script>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap" />
+
+<!-- React + ReactDOM -->
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- Babel standalone: lets the browser transform JSX at runtime, no build step -->
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+
+<!-- Firebase (compat build — plain <script> tags, real project, real backend) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<!-- Leaflet CSS loaded lazily (see loadScriptOnce) only when the GPS map is actually shown, so a slow/blocked CDN can't block the whole page from loading -->
+<script>
+  function loadLeafletCss() {
+    if (document.getElementById("leaflet-css")) return;
+    var link = document.createElement("link");
+    link.id = "leaflet-css"; link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(link);
+  }
+</script>
+
+<style>
+  :root { --purple: #9b3fe8; --purple-soft: #c48cf5; --purple-deep: #6b1fb0; }
+  * { box-sizing: border-box; }
+  html, body, #root { margin: 0; min-height: 100vh; }
+  body { font-family: "Cairo", sans-serif; background: #f2f1ec; -webkit-tap-highlight-color: transparent; }
+  button { font-family: inherit; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease, filter .15s ease, opacity .15s ease; }
+  button:hover { filter: brightness(1.08); }
+  button:active { transform: scale(0.96); }
+  button:disabled { opacity: .5; cursor: not-allowed; transform: none; filter: none; }
+  input, select, textarea { font-family: inherit; transition: border-color .15s ease, box-shadow .15s ease; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--purple) !important; box-shadow: 0 0 0 3px rgba(155,63,232,.18); }
+  .lift { transition: transform .2s ease, box-shadow .2s ease; }
+  .lift:hover { transform: translateY(-4px); box-shadow: 0 12px 28px rgba(0,0,0,.12); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn .35s ease both; }
+  @keyframes pulseGlow { 0%,100% { box-shadow: 0 4px 18px rgba(155,63,232,.35); } 50% { box-shadow: 0 4px 26px rgba(155,63,232,.65); } }
+  .cart-pulse { animation: pulseGlow 2.4s ease-in-out infinite; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #d8d2c4; border-radius: 8px; }
+  /* Dark mode: toggled by adding .dark-mode to <body> (see useDarkMode).
+     The app's colors are almost all inline styles, so instead of overriding
+     each one individually we invert the whole page's colors — a common,
+     pragmatic retrofit — then invert images/icons back so photos stay normal. */
+  body.dark-mode { filter: invert(1) hue-rotate(180deg); background: #fff; }
+  body.dark-mode img { filter: invert(1) hue-rotate(180deg); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel-source" id="app-source">
+const { useState, useEffect, useContext, createContext } = React;
+
+/* ============================= Firebase (real) ============================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyDgylC5uDhcGzeWjFWLveCh4Q-IxtSt8RA",
+  authDomain: "we-in-e0c9b.firebaseapp.com",
+  projectId: "we-in-e0c9b",
+  storageBucket: "we-in-e0c9b.firebasestorage.app",
+  messagingSenderId: "857243960215",
+  appId: "1:857243960215:web:ec48c95b64715f047b7ad2",
+  measurementId: "G-34X752MBDW",
+};
+const mainApp = firebase.initializeApp(firebaseConfig);
+const auth = mainApp.auth();
+const db = mainApp.firestore();
+const storage = mainApp.storage();
+
+/* ============================= Auth context ============================= */
+const AuthContext = createContext(null);
+function useAuth() { return useContext(AuthContext); }
+
+function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(async (u) => {
+      setUser(u);
+      if (u) {
+        const ref = db.collection("users").doc(u.uid);
+        let snap = await ref.get();
+        if (!snap.exists) {
+          await ref.set({
+            name: u.displayName || "",
+            email: u.email || "",
+            phone: null,
+            role: "customer",
+            wishlist: [],
+            addresses: [],
+            points: 0,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+          snap = await ref.get();
+        }
+        setProfile({ id: u.uid, ...snap.data() });
+      } else {
+        setProfile(null);
+      }
+      setLoading(false);
+    });
+    return unsub;
+  }, []);
+
+  async function refreshProfile() {
+    if (!auth.currentUser) return;
+    const snap = await db.collection("users").doc(auth.currentUser.uid).get();
+    setProfile(snap.exists ? { id: auth.currentUser.uid, ...snap.data() } : null);
+  }
+
+  async function signup({ email, password, name, referralCode }) {
+    const cred = await auth.createUserWithEmailAndPassword(email, password);
+    await cred.user.updateProfile({ displayName: name });
+    const myReferralCode = cred.user.uid.slice(0, 6).toUpperCase();
+    let referredBy = null;
+    if (referralCode && referralCode.trim()) {
+      try {
+        const snap = await db.collection("users").where("referralCode", "==", referralCode.trim().toUpperCase()).limit(1).get();
+        if (!snap.empty) referredBy = snap.docs[0].id;
+      } catch (e) {}
+    }
+    await db.collection("users").doc(cred.user.uid).set({
+      name, email, phone: null, role: "customer", wishlist: [], addresses: [], points: 0,
+      referralCode: myReferralCode, referredBy,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    // Award both sides of a successful referral, if a valid code was used.
+    if (referredBy) {
+      try {
+        const refSettings = await db.collection("settings").doc("referral").get();
+        const rewardPoints = (refSettings.exists && refSettings.data().points) || 0;
+        if (rewardPoints > 0) {
+          await db.collection("users").doc(cred.user.uid).update({ points: firebase.firestore.FieldValue.increment(rewardPoints) });
+          await db.collection("users").doc(referredBy).update({ points: firebase.firestore.FieldValue.increment(rewardPoints) });
+          notifyUser(referredBy, "دعوة ناجحة!", "صديقك سجّل بكودك، كسبت " + rewardPoints + " نقطة.");
+        }
+      } catch (e) {}
+    }
+    return cred.user;
+  }
+
+  async function login({ email, password }) {
+    const cred = await auth.signInWithEmailAndPassword(email, password);
+    return cred.user;
+  }
+
+  async function socialSignIn(providerName) {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    const cred = await auth.signInWithPopup(provider);
+    return cred.user;
+  }
+  const loginWithGoogle = () => socialSignIn("google");
+
+  async function setMyPhone(phone) {
+    if (!auth.currentUser) return;
+    await db.collection("users").doc(auth.currentUser.uid).update({ phone });
+    await refreshProfile();
+  }
+
+  async function logout() { await auth.signOut(); }
+
+  // Creates merchant/delivery/staff accounts without logging the admin out —
+  // uses a throwaway secondary Firebase app instance for the creation call.
+  async function createManagedAccount({ email, password, name, role, phone, extra = {} }) {
+    const secondaryApp = firebase.initializeApp(firebaseConfig, "secondary-" + Date.now());
+    try {
+      const cred = await secondaryApp.auth().createUserWithEmailAndPassword(email, password);
+      await db.collection("users").doc(cred.user.uid).set({
+        name, email, phone: phone || null, role,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        ...extra,
+      });
+      return cred.user.uid;
+    } finally {
+      await secondaryApp.auth().signOut().catch(() => {});
+      await secondaryApp.delete().catch(() => {});
+    }
+  }
+
+  const value = { user, profile, loading, signup, login, loginWithGoogle, setMyPhone, logout, createManagedAccount };
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+/* ============================= Firestore hooks ============================= */
+function useCollection(name, orderByField) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let ref = db.collection(name);
+    if (orderByField) ref = ref.orderBy(orderByField);
+    const unsub = ref.onSnapshot(
+      (snap) => { setData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); setLoading(false); },
+      (err) => { console.error(err); setLoading(false); }
+    );
+    return unsub;
+  }, [name, orderByField]);
+  return { data, loading };
+}
+
+function useQuery(name, field, op, value) {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    if (value === undefined || value === null) { setData([]); setLoading(false); return; }
+    const unsub = db.collection(name).where(field, op, value).onSnapshot(
+      (snap) => { setData(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); setLoading(false); },
+      (err) => { console.error(err); setLoading(false); }
+    );
+    return unsub;
+  }, [name, field, op, value]);
+  return { data, loading };
+}
+
+function useDoc(collectionName, docId) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    const unsub = db.collection(collectionName).doc(docId).onSnapshot(
+      (snap) => setData(snap.exists ? snap.data() : null),
+      (err) => console.error(err)
+    );
+    return unsub;
+  }, [collectionName, docId]);
+  return data;
+}
+
+// Counts one visit per browser tab session (not every re-render) by tracking
+// a real total in Firestore — every visitor's browser increments the same
+// shared counter once when the app first loads.
+let visitCounted = false;
+function countVisitOnce() {
+  if (visitCounted) return;
+  visitCounted = true;
+  db.collection("stats").doc("visits").set({ count: firebase.firestore.FieldValue.increment(1) }, { merge: true }).catch(() => {});
+}
+
+/* ============================= Helpers ============================= */
+const isValidPhone = (phone) => /^09\d{8}$/.test((phone || "").trim()) && !/^(\d)\1{9}$/.test((phone || "").trim());
+function genPassword() { return String(Math.floor(10000000 + Math.random() * 90000000)); }
+// Logs a sensitive admin action for the audit trail. Fire-and-forget —
+// never blocks or fails the action it's logging.
+function logAudit(action, details) {
+  db.collection("auditLog").add({
+    action, details: details || "",
+    by: (auth.currentUser && auth.currentUser.email) || "unknown",
+    at: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(() => {});
+}
+
+// Writes an in-app notification for a user (shown via the notification bell).
+// This is in-app only (Firestore-backed), not a real OS/browser push notification
+// (that would need Firebase Cloud Messaging + a service worker + VAPID keys).
+// ===== Real push notifications (Web Push via a Cloudflare Worker relay) =====
+// Firebase's own push (FCM) now requires a paid Cloud Functions backend, so
+// instead this sends standard Web Push directly: the browser/device holds a
+// "subscription" (saved on the user's profile), and a small external relay
+// (Cloudflare Worker, free) does the actual encrypted send using our VAPID key.
+const VAPID_PUBLIC_KEY_CLIENT = "BARhPve3PimAAOQuuE9pGzGz2iy7kM_nodeDqJzSdwavo-zkEcfo3ABGxPNoRolu0bu3EFinl1DyvcSjG5HYNtY";
+const PUSH_WORKER_URL = "https://wein-push.mohamedfayzyasenalsabagh.workers.dev";
+const PUSH_SHARED_SECRET = "e80a9399998b3239b1de1f98dd3b5dd8fad48be6d7d55ae4";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+// Asks the browser for notification permission and saves the resulting push
+// subscription on this user's profile. Call this from a button tap (browsers
+// require the permission prompt to be triggered by a real user gesture).
+async function enablePushNotifications(uid, silent) {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (!silent) alert("متصفحك ما بيدعم الإشعارات.");
+    return false;
+  }
+  try {
+    const reg = await navigator.serviceWorker.register("sw.js");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") { if (!silent) alert("لازم توافق على إذن الإشعارات حتى تفعّل هالميزة."); return false; }
+    const subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY_CLIENT),
+    });
+    await db.collection("users").doc(uid).update({
+      pushSubscriptions: firebase.firestore.FieldValue.arrayUnion(subscription.toJSON()),
+    });
+    return true;
+  } catch (err) {
+    if (!silent) alert("تعذّر تفعيل الإشعارات: " + err.message);
+    return false;
+  }
+}
+
+// Sends a real push to every device this user enabled notifications on,
+// via the Cloudflare Worker relay (fire-and-forget — never blocks the caller).
+function sendRealPush(targetUid, title, body) {
+  db.collection("users").doc(targetUid).get().then((snap) => {
+    const subs = (snap.exists && snap.data().pushSubscriptions) || [];
+    subs.forEach((sub) => {
+      fetch(PUSH_WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Shared-Secret": PUSH_SHARED_SECRET },
+        body: JSON.stringify({ subscription: sub, title, body: body || "" }),
+      }).catch(() => {});
+    });
+  }).catch(() => {});
+}
+
+function notifyUser(userId, title, body) {
+  if (!userId) return;
+  db.collection("notifications").add({
+    userId, title, body: body || "", read: false,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(() => {});
+  sendRealPush(userId, title, body);
+}
+
+function useExchangeRate() {
+  const [rate, setRate] = useState(null);
+  useEffect(() => {
+    const unsub = db.collection("settings").doc("exchangeRate").onSnapshot(
+      (snap) => setRate(snap.exists ? snap.data().usdToSyp : null),
+      () => {}
+    );
+    return unsub;
+  }, []);
+  return rate;
+}
+function altPriceLabel(price, currency, rate) {
+  if (!rate || !price) return null;
+  if (currency === "USD") return Math.round(price * rate).toLocaleString("en-US") + " ل.س";
+  if (currency === "SYP") return "$" + (price / rate).toFixed(2);
+  return null;
+}
+
+function firebaseErrorToArabic(err) {
+  const code = (err && err.code) || "";
+  if (code.includes("email-already-in-use")) return "هذا الإيميل مسجّل/مستخدم مسبقاً.";
+  if (code.includes("invalid-email")) return "صيغة الإيميل غير صحيحة.";
+  if (code.includes("weak-password")) return "كلمة المرور ضعيفة جداً.";
+  if (code.includes("user-not-found") || code.includes("wrong-password") || code.includes("invalid-credential")) return "الإيميل أو كلمة المرور غير صحيحة.";
+  if (code.includes("too-many-requests")) return "محاولات كتير، جرب بعد شوي.";
+  return "صار خطأ: " + ((err && err.message) || "غير معروف");
+}
+function compressImageFile(file, maxDim, quality) {
+  maxDim = maxDim || 700; quality = quality || 0.6;
+
+  function drawAndExport(imgSource, srcWidth, srcHeight) {
+    let width = srcWidth, height = srcHeight;
+    if (width > height && width > maxDim) { height = Math.round((height * maxDim) / width); width = maxDim; }
+    else if (height > maxDim) { width = Math.round((width * maxDim) / height); height = maxDim; }
+    const canvas = document.createElement("canvas");
+    canvas.width = width; canvas.height = height;
+    canvas.getContext("2d").drawImage(imgSource, 0, 0, width, height);
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  }
+
+  // Fast path: createImageBitmap decodes the file directly (no base64
+  // round-trip through FileReader), which is noticeably quicker on mobile —
+  // especially for the large photos modern phone cameras produce.
+  if (window.createImageBitmap) {
+    return createImageBitmap(file)
+      .then((bitmap) => drawAndExport(bitmap, bitmap.width, bitmap.height))
+      .catch(() => compressImageFileLegacy(file, maxDim, quality));
+  }
+  return compressImageFileLegacy(file, maxDim, quality);
+}
+
+function compressImageFileLegacy(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("تعذّرت قراءة الصورة"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("تعذّر تحميل الصورة"));
+      img.onload = () => {
+        let width = img.width, height = img.height;
+        if (width > height && width > maxDim) { height = Math.round((height * maxDim) / width); width = maxDim; }
+        else if (height > maxDim) { width = Math.round((width * maxDim) / height); height = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+// Converts a Blob (already compressed by compressImageFile) into a base64
+// data URL. Used to store small images directly inside Firestore documents
+// (QR code, payment proof, product gallery) since Firebase Storage isn't
+// enabled on this project yet (needs the paid Blaze plan).
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("تعذّرت قراءة الصورة"));
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+async function fileToCompressedBase64(file, maxDim, quality) {
+  const blob = await compressImageFile(file, maxDim, quality);
+  return blobToBase64(blob);
+}
+
+function useAdminSettings(docId) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    const unsub = db.collection("settings").doc(docId).onSnapshot((snap) => setData(snap.exists ? snap.data() : {}), () => {});
+    return unsub;
+  }, [docId]);
+  return data;
+}
+
+// Loads an external script on demand (instead of blocking page load with a
+// <script> tag in <head>) — used for Leaflet (GPS map) and jsPDF (invoice),
+// so that a slow/blocked CDN for those doesn't prevent the whole app from
+// loading. Only called when those specific features are actually used.
+const _loadedScripts = {};
+function loadScriptOnce(src) {
+  if (_loadedScripts[src]) return _loadedScripts[src];
+  _loadedScripts[src] = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("تعذّر تحميل مكتبة: " + src));
+    document.head.appendChild(s);
+  });
+  return _loadedScripts[src];
+}
+
+function useDarkMode() {
+  const [dark, setDark] = useState(() => localStorage.getItem("weinDark") === "1");
+  useEffect(() => {
+    document.body.classList.toggle("dark-mode", dark);
+    localStorage.setItem("weinDark", dark ? "1" : "0");
+  }, [dark]);
+  return [dark, setDark];
+}
+
+// Lightweight bilingual support (Arabic/English) for the customer-facing
+// shopping flow: login, main nav, storefront, cart, and order list. Admin,
+// merchant, and delivery dashboards, plus deeper text (descriptions,
+// reviews, case chat, notifications) stay Arabic-only in this pass — fully
+// translating those would mean touching every string in a very large file.
+const TRANSLATIONS = {
+  ar: {
+    tagline: "السوق كلو بمكان واحد 🛍️", continueGoogle: "المتابعة عبر Google", continueFacebook: "المتابعة عبر Facebook", or: "أو",
+    fullName: "الاسم الكامل", email: "البريد الإلكتروني", password: "كلمة المرور", referral: "كود دعوة صديق (اختياري)",
+    login: "دخول", signup: "إنشاء الحساب", noAccount: "ما عندك حساب؟", createAccount: "إنشاء حساب جديد", haveAccount: "عندك حساب أصلاً؟", loginLink: "تسجيل الدخول",
+    shop: "المتجر", wishlist: "المفضلة", myOrders: "طلباتي", support: "الدعم", account: "حسابي", cart: "السلة", logout: "خروج",
+    search: "🔍 دور على منتج…", all: "الكل", addToCart: "أضف للسلة", noProducts: "لا يوجد منتجات.",
+    total: "الإجمالي", confirmOrder: "تأكيد الطلب", back: "رجوع", deliveryAddress: "عنوان التوصيل", cartEmpty: "السلة فارغة.",
+    logoutFull: "تسجيل الخروج", siteVisits: "زيارات الموقع",
+    tabCategories: "الفئات", tabMerchants: "التجار", tabDelivery: "المندوبون", tabOrders: "الطلبات", tabCases: "المتابعة وحل الحالات",
+    tabCoupons: "الكوبونات", tabSettings: "الإعدادات", tabReports: "التقارير", tabReturns: "الإرجاع", tabStaff: "الموظفون",
+    tabAdmins: "المدراء", tabAuditLog: "سجل النشاط", tabBackup: "نسخة احتياطية", tabAccount: "حسابي",
+    merchantProducts: "منتجاتي", merchantOrders: "طلباتي", merchantReports: "التقارير", merchantReviews: "المراجعات", merchantStoreProfile: "واجهة متجري", merchantSupport: "الدعم",
+    deliveryInterface: "واجهة المندوب", deliveryMyOrders: "طلباتي", markDelivered: "تم التسليم", sharingLocation: "عم يشارك موقعه",
+    adminInterface: "واجهة الأدمن",
+    save: "حفظ", add: "إضافة", delete: "حذف", edit: "تعديل", cancel: "إلغاء",
+    categoriesTitle: "الفئات", newCategoryName: "اسم فئة جديدة", addCategory: "إضافة فئة", noCategoriesYet: "لا يوجد فئات بعد.",
+    nameLabel: "الاسم", phoneLabel: "رقم الهاتف (09xxxxxxxx)", emailLabel: "الإيميل", newPasswordBtn: "كلمة مرور جديدة", deleteAccountBtn: "حذف الحساب", activate: "تفعيل", deactivate: "إيقاف", creating: "جارِ الإنشاء…",
+    addNewMerchant: "إضافة تاجر جديد", merchantNamePh: "اسم التاجر", emailForLoginPh: "الإيميل (لتسجيل الدخول)",
+    commissionType: "عمولة على البيع", subscriptionType: "اشتراك شهري", commissionRatePh: "نسبة العمولة %", currencySYP: "ليرة سورية", currencyUSD: "دولار أمريكي",
+    createMerchantBtn: "إنشاء حساب التاجر", currentMerchants: "التجار الحاليون", closeBtn: "إغلاق", editBtn: "تعديل", saveBtn: "حفظ",
+    accountCreatedFull: "تم إنشاء الحساب فعلياً.", handOffNote: "سلّم هاي البيانات للتاجر مباشرة — ما رح تظهر مرة ثانية.",
+    noMerchantsYet: "لا يوجد تجار بعد.",
+  },
+  en: {
+    tagline: "The whole market, one place 🛍️", continueGoogle: "Continue with Google", continueFacebook: "Continue with Facebook", or: "or",
+    fullName: "Full name", email: "Email", password: "Password", referral: "Friend's invite code (optional)",
+    login: "Log in", signup: "Create account", noAccount: "Don't have an account?", createAccount: "Create a new account", haveAccount: "Already have an account?", loginLink: "Log in",
+    shop: "Shop", wishlist: "Wishlist", myOrders: "My Orders", support: "Support", account: "Account", cart: "Cart", logout: "Log out",
+    search: "🔍 Search products…", all: "All", addToCart: "Add to cart", noProducts: "No products yet.",
+    total: "Total", confirmOrder: "Confirm order", back: "Back", deliveryAddress: "Delivery address", cartEmpty: "Your cart is empty.",
+    logoutFull: "Log out", siteVisits: "Site visits",
+    tabCategories: "Categories", tabMerchants: "Merchants", tabDelivery: "Delivery reps", tabOrders: "Orders", tabCases: "Support cases",
+    tabCoupons: "Coupons", tabSettings: "Settings", tabReports: "Reports", tabReturns: "Returns", tabStaff: "Staff",
+    tabAdmins: "Admins", tabAuditLog: "Audit log", tabBackup: "Backup", tabAccount: "Account",
+    merchantProducts: "My Products", merchantOrders: "My Orders", merchantReports: "Reports", merchantReviews: "Reviews", merchantStoreProfile: "Store Profile", merchantSupport: "Support",
+    deliveryInterface: "Delivery Rep View", deliveryMyOrders: "My Orders", markDelivered: "Mark Delivered", sharingLocation: "Sharing location",
+    adminInterface: "Admin View",
+    save: "Save", add: "Add", delete: "Delete", edit: "Edit", cancel: "Cancel",
+    categoriesTitle: "Categories", newCategoryName: "New category name", addCategory: "Add category", noCategoriesYet: "No categories yet.",
+    nameLabel: "Name", phoneLabel: "Phone (09xxxxxxxx)", emailLabel: "Email", newPasswordBtn: "New password", deleteAccountBtn: "Delete account", activate: "Activate", deactivate: "Deactivate", creating: "Creating…",
+    addNewMerchant: "Add new merchant", merchantNamePh: "Merchant name", emailForLoginPh: "Email (for login)",
+    commissionType: "Commission on sales", subscriptionType: "Monthly subscription", commissionRatePh: "Commission %", currencySYP: "Syrian Pound", currencyUSD: "US Dollar",
+    createMerchantBtn: "Create merchant account", currentMerchants: "Current merchants", closeBtn: "Close", editBtn: "Edit", saveBtn: "Save",
+    accountCreatedFull: "Account created successfully.", handOffNote: "Hand these credentials to the merchant directly — they won't be shown again.",
+    noMerchantsYet: "No merchants yet.",
+  },
+};
+// Shared across the whole app via Context — every component that calls
+// useLanguage() gets the SAME language value and re-renders together when
+// it changes (a plain per-component useState wouldn't do this: toggling the
+// language in one place would only update that one component's local copy,
+// which is why direction flipped but text didn't change before this fix).
+const LanguageContext = createContext(null);
+// ===== Automatic whole-page translation (Arabic → English) =====
+// Instead of hand-maintaining a dictionary (which misses anything new we
+// add later), this walks every visible text node under #root and asks a
+// free translation API (MyMemory, no key needed) to translate it, caching
+// results in localStorage so repeat visits are instant. A MutationObserver
+// keeps watching so any NEW text (switching tabs, live Firestore data,
+// future features) gets auto-translated too, with zero code changes needed
+// per new string. Translation quality is machine-translated (not as polished
+// as hand-written copy) and needs an internet connection to the API the
+// first time each string is seen — after that it's cached and instant.
+const _translateCache = (() => {
+  try { return JSON.parse(localStorage.getItem("weinTranslateCache") || "{}"); } catch (e) { return {}; }
+})();
+function _saveTranslateCache() {
+  try { localStorage.setItem("weinTranslateCache", JSON.stringify(_translateCache)); } catch (e) {}
+}
+function _hasArabic(text) { return /[\u0600-\u06FF]/.test(text); }
+async function _translateOne(text) {
+  const key = text.trim();
+  if (_translateCache[key]) return _translateCache[key];
+  try {
+    // MyMemory's free tier caps each request at ~500 bytes; skip longer blocks
+    // (they stay Arabic rather than getting cut off mid-sentence).
+    if (new Blob([key]).size > 480) return null;
+    const res = await fetch("https://api.mymemory.translated.net/get?q=" + encodeURIComponent(key) + "&langpair=ar|en");
+    const data = await res.json();
+    const translated = data && data.responseData && data.responseData.translatedText;
+    if (translated && translated.trim()) {
+      _translateCache[key] = translated;
+      _saveTranslateCache();
+      return translated;
+    }
+  } catch (e) {}
+  return null;
+}
+
+const _autoTranslateState = { queue: [], running: 0, observer: null, nodeOriginals: new WeakMap() };
+function _queueTranslateNode(node) {
+  if (!node || node.nodeType !== 3) return;
+  const text = node.textContent;
+  if (!text || !text.trim() || !_hasArabic(text)) return;
+  if (!_autoTranslateState.nodeOriginals.has(node)) _autoTranslateState.nodeOriginals.set(node, text);
+  _autoTranslateState.queue.push(node);
+  _drainTranslateQueue();
+}
+function _drainTranslateQueue() {
+  while (_autoTranslateState.running < 3 && _autoTranslateState.queue.length) {
+    const node = _autoTranslateState.queue.shift();
+    _autoTranslateState.running++;
+    const original = _autoTranslateState.nodeOriginals.get(node) || node.textContent;
+    _translateOne(original).then((translated) => {
+      _autoTranslateState.running--;
+      // Only apply if the node is still on the page and its text hasn't
+      // since been changed to something else by a fresh render.
+      if (translated && node.isConnected && node.textContent === original) {
+        node.textContent = translated;
+      }
+      _drainTranslateQueue();
+    });
+  }
+}
+function _walkAndQueueTranslate(el) {
+  if (!el) return;
+  if (el.nodeType === 3) { _queueTranslateNode(el); return; }
+  if (el.nodeType !== 1) return;
+  const tag = el.tagName;
+  if (tag === "SCRIPT" || tag === "STYLE") return;
+  for (const child of el.childNodes) _walkAndQueueTranslate(child);
+}
+function _restoreOriginalText(el) {
+  if (!el) return;
+  if (el.nodeType === 3) {
+    const original = _autoTranslateState.nodeOriginals.get(el);
+    if (original != null) el.textContent = original;
+    return;
+  }
+  if (el.nodeType !== 1) return;
+  for (const child of el.childNodes) _restoreOriginalText(child);
+}
+function startAutoTranslate() {
+  const root = document.getElementById("root");
+  if (!root) return;
+  _walkAndQueueTranslate(root);
+  if (_autoTranslateState.observer) return;
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type === "characterData") _queueTranslateNode(m.target);
+      else if (m.type === "childList") m.addedNodes.forEach((n) => _walkAndQueueTranslate(n));
+    }
+  });
+  observer.observe(root, { childList: true, characterData: true, subtree: true });
+  _autoTranslateState.observer = observer;
+}
+function stopAutoTranslate() {
+  if (_autoTranslateState.observer) { _autoTranslateState.observer.disconnect(); _autoTranslateState.observer = null; }
+  const root = document.getElementById("root");
+  if (root) _restoreOriginalText(root);
+  _autoTranslateState.queue = [];
+}
+
+function LanguageProvider({ children }) {
+  const [lang, setLang] = useState(() => localStorage.getItem("weinLang") || "ar");
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "en" ? "ltr" : "rtl";
+    localStorage.setItem("weinLang", lang);
+    // Give React a moment to finish painting the new screen before scanning it.
+    const timer = setTimeout(() => { if (lang === "en") startAutoTranslate(); else stopAutoTranslate(); }, 150);
+    return () => clearTimeout(timer);
+  }, [lang]);
+  const t = (key) => (TRANSLATIONS[lang] && TRANSLATIONS[lang][key]) || TRANSLATIONS.ar[key] || key;
+  return <LanguageContext.Provider value={[lang, setLang, t]}>{children}</LanguageContext.Provider>;
+}
+function useLanguage() {
+  return useContext(LanguageContext);
+}
+function LanguageToggle({ dark: darkHeader }) {
+  const [lang, setLang] = useLanguage();
+  return (
+    <button onClick={() => setLang((l) => (l === "ar" ? "en" : "ar"))} style={{ background: "transparent", border: darkHeader ? "1px solid rgba(255,255,255,.3)" : "1px solid #000", color: darkHeader ? "#fff" : "#000", borderRadius: 999, padding: "6px 12px", fontSize: 12, fontWeight: 700 }}>
+      {lang === "ar" ? "EN" : "AR"}
+    </button>
+  );
+}
+
+function OrderStepper({ status }) {
+  const [lang] = useLanguage();
+  const steps = lang === "en" ? [
+    ["awaiting_payment_review", "Awaiting payment"],
+    ["processing", "Processing"],
+    ["out_for_delivery", "On the way"],
+    ["delivered", "Delivered"],
+  ] : [
+    ["awaiting_payment_review", "بانتظار الدفع"],
+    ["processing", "قيد التجهيز"],
+    ["out_for_delivery", "بالطريق"],
+    ["delivered", "وصل"],
+  ];
+  if (status === "cancelled") return <div style={{ color: "#B23A3A", fontSize: 13, fontWeight: 700 }}>{lang === "en" ? "❌ Order cancelled" : "❌ الطلب ملغى"}</div>;
+  const currentIdx = steps.findIndex(([id]) => id === status);
+  return (
+    <div style={{ display: "flex", alignItems: "center", margin: "10px 0" }}>
+      {steps.map(([id, label], i) => (
+        <React.Fragment key={id}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+            <div style={{ width: 22, height: 22, borderRadius: "50%", background: i <= currentIdx ? "var(--purple)" : "#eee", color: i <= currentIdx ? "#fff" : "#999", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>{i <= currentIdx ? "✓" : i + 1}</div>
+            <div style={{ fontSize: 10, color: i <= currentIdx ? "#000" : "#aaa", marginTop: 4, textAlign: "center" }}>{label}</div>
+          </div>
+          {i < steps.length - 1 && <div style={{ flex: 1, height: 2, background: i < currentIdx ? "var(--purple)" : "#eee", marginBottom: 16 }}></div>}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function StatusTag({ status }) {
+  const [lang] = useLanguage();
+  const map = lang === "en" ? {
+    awaiting_payment_review: ["Awaiting payment", "#B58A2A"],
+    processing: ["Processing", "#2A6FB5"],
+    out_for_delivery: ["Out for delivery", "#7A4CB5"],
+    delivered: ["Delivered", "#1F7A4C"],
+    cancelled: ["Cancelled", "#B23A3A"],
+  } : {
+    awaiting_payment_review: ["بانتظار الدفع", "#B58A2A"],
+    processing: ["قيد التجهيز", "#2A6FB5"],
+    out_for_delivery: ["قيد التوصيل", "#7A4CB5"],
+    delivered: ["تم التسليم", "#1F7A4C"],
+    cancelled: ["ملغى", "#B23A3A"],
+  };
+  const pair = map[status] || [status, "#888"];
+  return <span style={{ color: pair[1], border: "1px solid " + pair[1], borderRadius: 999, padding: "2px 10px", fontSize: 12 }}>{pair[0]}</span>;
+}
+function Loading() {
+  const [lang] = useLanguage();
+  return <div>{lang === "en" ? "Loading…" : "جارِ التحميل…"}</div>;
+}
+const inputStyle = { padding: "10px 14px", borderRadius: 8, border: "1px solid #ddd" };
+const btnPrimary = { background: "linear-gradient(135deg, #C48CF5, #9B3FE8)", color: "#fff", border: "none", borderRadius: 999, padding: "10px 22px", boxShadow: "0 4px 14px rgba(155,63,232,.3)" };
+const btnDanger = { background: "#fff", color: "red", border: "1px solid red", borderRadius: 999, padding: "8px 16px" };
+const btnGhost = { background: "transparent", border: "1.5px solid #000", borderRadius: 999, padding: "10px 20px" };
+
+/* ============================= Login screen ============================= */
+function Logo({ size, dark }) {
+  size = size || 44;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+      <svg width={size} height={size} viewBox="0 0 48 48" fill="none">
+        <defs>
+          <linearGradient id="weinGrad" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C48CF5" />
+            <stop offset="1" stopColor="#6B1FB0" />
+          </linearGradient>
+        </defs>
+        <rect width="48" height="48" rx="14" fill="url(#weinGrad)" />
+        <path d="M14 20 L16 34 Q16.5 36 18.5 36 H29.5 Q31.5 36 32 34 L34 20" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M18 20 V16 Q18 11 24 11 Q30 11 30 16 V20" stroke="#fff" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      </svg>
+      <span style={{ fontWeight: 900, fontSize: size * 0.5, color: dark ? "#fff" : "#000" }}>
+        We<span style={{ color: dark ? "var(--purple-soft)" : "var(--purple)" }}>-in</span>
+      </span>
+    </div>
+  );
+}
+
+function LoginScreen({ onBack }) {
+  const { signup, login, loginWithGoogle } = useAuth();
+  const [lang, setLang, t] = useLanguage();
+  const [mode, setMode] = useState("login");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [staticPage, setStaticPage] = useState(null);
+  const isValidPassword = (pw) => pw.trim().length >= 8;
+
+  const wrapStyle = {
+    minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+    background: "radial-gradient(circle at 22% 12%, rgba(155,63,232,.28) 0%, transparent 40%), radial-gradient(circle at 85% 88%, rgba(155,63,232,.16) 0%, transparent 45%), #0A0A0B",
+    padding: 20,
+  };
+  const cardStyle = { background: "#fff", borderRadius: 22, padding: 30, width: "100%", maxWidth: 420, boxShadow: "0 25px 70px rgba(0,0,0,.45)" };
+
+  const handleSocial = async (fn) => {
+    setError(""); setBusy(true);
+    try { await fn(); } catch (err) { setError(firebaseErrorToArabic(err)); } finally { setBusy(false); }
+  };
+  const handleSignup = async (e) => {
+    e.preventDefault(); setError("");
+    if (!name.trim() || !email.trim() || !password.trim()) { setError("عبّي كل الحقول."); return; }
+    if (!isValidPassword(password)) { setError("كلمة المرور لازم تكون 8 أحرف/أرقام على الأقل."); return; }
+    setBusy(true);
+    try { await signup({ email: email.trim(), password, name: name.trim(), referralCode }); }
+    catch (err) { setError(firebaseErrorToArabic(err)); } finally { setBusy(false); }
+  };
+  const handleLogin = async (e) => {
+    e.preventDefault(); setError(""); setBusy(true);
+    try { await login({ email: email.trim(), password }); }
+    catch (err) { setError(firebaseErrorToArabic(err)); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={wrapStyle}>
+      <div style={cardStyle} className="fade-in">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          {onBack ? <button onClick={onBack} style={{ background: "transparent", border: "none", color: "#888", fontSize: 13, cursor: "pointer" }}>{lang === "en" ? "← Back to shop" : "← رجوع للمتجر"}</button> : <span></span>}
+          <LanguageToggle />
+        </div>
+        <div style={{ marginBottom: 6 }}><Logo size={48} /></div>
+        <p style={{ textAlign: "center", color: "#9B3FE8", fontWeight: 700, fontSize: 14, marginTop: 0, marginBottom: 22 }}>{t("tagline")}</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+          <button type="button" style={{ background: "#fff", color: "#000", border: "1.5px solid #000", borderRadius: 999, padding: 12, fontWeight: 700 }} onClick={() => handleSocial(loginWithGoogle)} disabled={busy}>{t("continueGoogle")}</button>
+        </div>
+        <div style={{ textAlign: "center", color: "#999", fontSize: 12, marginBottom: 14 }}>{t("or")}</div>
+        <form onSubmit={mode === "login" ? handleLogin : handleSignup} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {mode === "signup" && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>{t("fullName")}
+              <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+            </label>
+          )}
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>{t("email")}
+            <input type="email" style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>{t("password")} {mode === "signup" && "(8 أحرف/أرقام على الأقل)"}
+            <input type="password" style={inputStyle} value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          {mode === "signup" && (
+            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>{t("referral")}
+              <input style={inputStyle} value={referralCode} onChange={(e) => setReferralCode(e.target.value)} />
+            </label>
+          )}
+          {error && <div style={{ color: "#FF4D4D", fontSize: 13 }}>{error}</div>}
+          <button type="submit" style={btnPrimary} disabled={busy}>{busy ? "جارِ التنفيذ…" : mode === "login" ? t("login") : t("signup")}</button>
+        </form>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 13 }}>
+          {mode === "login" ? (
+            <span>{t("noAccount")} <a href="#" onClick={(e) => { e.preventDefault(); setMode("signup"); setError(""); }} style={{ color: "var(--purple)", fontWeight: 700, textDecoration: "none" }}>{t("createAccount")}</a></span>
+          ) : (
+            <span>{t("haveAccount")} <a href="#" onClick={(e) => { e.preventDefault(); setMode("login"); setError(""); }} style={{ color: "var(--purple)", fontWeight: 700, textDecoration: "none" }}>{t("loginLink")}</a></span>
+          )}
+        </div>
+        <div style={{ textAlign: "center", marginTop: 18, fontSize: 11, color: "#aaa" }}>
+          <a href="#" onClick={(e) => { e.preventDefault(); setStaticPage("about"); }} style={{ color: "#aaa", textDecoration: "underline", margin: "0 6px" }}>من نحن</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); setStaticPage("terms"); }} style={{ color: "#aaa", textDecoration: "underline", margin: "0 6px" }}>الشروط والأحكام</a>
+          <a href="#" onClick={(e) => { e.preventDefault(); setStaticPage("privacy"); }} style={{ color: "#aaa", textDecoration: "underline", margin: "0 6px" }}>سياسة الخصوصية</a>
+        </div>
+      </div>
+      {staticPage && <StaticPageModal pageId={staticPage} onClose={() => setStaticPage(null)} />}
+    </div>
+  );
+}
+
+/* ============================= Shared fullscreen message ============================= */
+const STATIC_PAGES = {
+  about: { title: "من نحن", body: "We-in منصة تسوّق إلكتروني بتجمع تجار كتير بمكان واحد. هدفنا نخلي التسوّق أسهل وأسرع وأوثق، ونربط التاجر بالعميل بطريقة مباشرة وشفافة." },
+  terms: { title: "الشروط والأحكام", body: "استخدامك للمنصة يعني موافقتك على هالشروط: الأسعار والمنتجات مسؤولية التاجر صاحب المنتج. المنصة وسيط بين التاجر والعميل والمندوب. أي نزاع بيتم التعامل معه عبر الدعم الفني. يحق للإدارة إيقاف أي حساب يخالف الاستخدام السليم للمنصة." },
+  privacy: { title: "سياسة الخصوصية", body: "بنحافظ على بياناتك الشخصية (الاسم، الهاتف، العنوان) ومنستخدمها إلا لأغراض إتمام الطلبات والتواصل معك. ما منشارك بياناتك مع أي طرف خارجي بدون داعي، وبتقدر تطلب حذف حسابك بأي وقت." },
+};
+
+function StaticPageModal({ pageId, onClose }) {
+  const page = STATIC_PAGES[pageId];
+  if (!page) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 20 }} onClick={onClose}>
+      <div className="fade-in" style={{ background: "#fff", borderRadius: 18, padding: 26, maxWidth: 420, maxHeight: "80vh", overflow: "auto", direction: "rtl" }} onClick={(e) => e.stopPropagation()}>
+        <h2 style={{ marginTop: 0 }}>{page.title}</h2>
+        <p style={{ lineHeight: 1.8, color: "#333" }}>{page.body}</p>
+        <button onClick={onClose} style={btnGhost}>إغلاق</button>
+      </div>
+    </div>
+  );
+}
+
+function FullscreenMessage({ title, subtitle, children }) {
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 20, gap: 8 }}>
+      <h1>{title}</h1>
+      <p style={{ color: "#666", maxWidth: 380 }}>{subtitle}</p>
+      {children}
+    </div>
+  );
+}
+
+function RequirePhoneGate({ onSubmit, onLogout }) {
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault(); setError("");
+    if (!isValidPhone(phone)) { setError("رقم الهاتف غير صحيح. لازم يبدأ بـ 09 ويتكوّن من 10 أرقام (مثال: 0912345678)."); return; }
+    setBusy(true);
+    try { await onSubmit(phone.trim()); } finally { setBusy(false); }
+  };
+  return (
+    <FullscreenMessage title="خطوة أخيرة" subtitle="لازم رقم هاتف حقيقي على حسابك، حتى لو دخلت عبر Google أو Facebook — التوصيل بحاجته.">
+      <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: 320 }}>
+        <input style={{ padding: "12px 14px", borderRadius: 9, border: "1px solid #ccc", textAlign: "center" }} placeholder="09xxxxxxxx" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        {error && <div style={{ color: "#FF4D4D", fontSize: 13 }}>{error}</div>}
+        <button type="submit" style={btnPrimary} disabled={busy}>{busy ? "جارِ الحفظ…" : "متابعة"}</button>
+        <button type="button" style={btnGhost} onClick={onLogout}>تسجيل الخروج</button>
+      </form>
+    </FullscreenMessage>
+  );
+}
+
+/* ============================= Admin: Categories ============================= */
+function CategoriesAdmin() {
+  const [, , t] = useLanguage();
+  const { data: categories, loading } = useCollection("categories", "name");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const add = async () => {
+    setError(""); if (!name.trim()) return;
+    try { await db.collection("categories").add({ name: name.trim(), createdAt: firebase.firestore.FieldValue.serverTimestamp() }); logAudit("إضافة فئة", name.trim()); setName(""); }
+    catch (err) { setError("تعذّر الحفظ: " + err.message); }
+  };
+  const remove = async (id, catName) => {
+    try { await db.collection("categories").doc(id).delete(); logAudit("حذف فئة", catName || id); } catch (err) { setError("تعذّر الحذف: " + err.message); }
+  };
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>{t("categoriesTitle")}</h2>
+      <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <input style={{ ...inputStyle, flex: 1 }} placeholder={t("newCategoryName")} value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button onClick={add} style={btnPrimary}>{t("addCategory")}</button>
+      </div>
+      {error && <div style={{ color: "red", marginBottom: 12 }}>{error}</div>}
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {categories.map((c) => (
+            <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "#F0EEE8", borderRadius: 999, padding: "6px 14px" }}>
+              {c.name}
+              <button onClick={() => remove(c.id, c.name)} style={{ border: "none", background: "transparent", color: "red", fontSize: 16 }}>×</button>
+            </div>
+          ))}
+          {categories.length === 0 && <div style={{ color: "#888" }}>{t("noCategoriesYet")}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Admin: Merchants ============================= */
+function MerchantsAdmin() {
+  const { createManagedAccount } = useAuth();
+  const [, , t] = useLanguage();
+  const { data: allUsers, loading } = useCollection("users");
+  const merchants = allUsers.filter((u) => u.role === "merchant");
+  const [form, setForm] = useState({ name: "", phone: "", email: "", type: "commission", commissionRate: 10, currency: "SYP" });
+  const [createdInfo, setCreatedInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
+  const create = async () => {
+    setCreatedInfo(null);
+    if (!form.name.trim() || !form.phone.trim() || !form.email.trim()) { setCreatedInfo({ error: "عبّي الاسم ورقم الهاتف والإيميل." }); return; }
+    if (!isValidPhone(form.phone)) { setCreatedInfo({ error: "رقم الهاتف غير صحيح." }); return; }
+    setBusy(true);
+    const password = genPassword();
+    try {
+      await createManagedAccount({
+        email: form.email.trim(), password, name: form.name.trim(), phone: form.phone.trim(), role: "merchant",
+        extra: { type: form.type, commissionRate: Number(form.commissionRate), currency: form.currency, status: "approved" },
+      });
+      logAudit("إنشاء حساب تاجر", form.name.trim() + " (" + form.email.trim() + ")");
+      setCreatedInfo({ email: form.email.trim(), password });
+      setForm({ name: "", phone: "", email: "", type: "commission", commissionRate: 10, currency: "SYP" });
+    } catch (err) { setCreatedInfo({ error: firebaseErrorToArabic(err) }); } finally { setBusy(false); }
+  };
+  const toggleStatus = async (m) => { await db.collection("users").doc(m.id).update({ status: m.status === "approved" ? "suspended" : "approved" }); };
+  const resetPassword = async (m) => {
+    try { await auth.sendPasswordResetEmail(m.email); alert("انبعث رابط إعادة تعيين كلمة المرور لإيميل التاجر: " + m.email); }
+    catch (err) { alert("تعذّر الإرسال: " + err.message); }
+  };
+  const deleteAccount = async (m) => {
+    if (!window.confirm("متأكد بدك تحذف حساب \"" + m.name + "\"؟ هاد بيلغي كل صلاحياته بالتطبيق فوراً.")) return;
+    await db.collection("users").doc(m.id).delete();
+    logAudit("حذف حساب تاجر", m.name + " (" + m.email + ")");
+  };
+  const startEdit = (m) => { setEditingId(m.id); setEditForm({ type: m.type, commissionRate: m.commissionRate || 10, currency: m.currency }); };
+  const saveEdit = async (id) => {
+    await db.collection("users").doc(id).update({ type: editForm.type, commissionRate: Number(editForm.commissionRate), currency: editForm.currency });
+    setEditingId(null);
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>{t("addNewMerchant")}</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px,1fr))", gap: 12, marginBottom: 14 }}>
+        <input style={inputStyle} placeholder={t("merchantNamePh")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input style={inputStyle} placeholder={t("phoneLabel")} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <input style={inputStyle} placeholder={t("emailForLoginPh")} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <select style={inputStyle} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+          <option value="commission">{t("commissionType")}</option>
+          <option value="subscription">{t("subscriptionType")}</option>
+        </select>
+        {form.type === "commission" && <input type="number" style={inputStyle} placeholder={t("commissionRatePh")} value={form.commissionRate} onChange={(e) => setForm({ ...form, commissionRate: e.target.value })} />}
+        <select style={inputStyle} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+          <option value="SYP">{t("currencySYP")}</option>
+          <option value="USD">{t("currencyUSD")}</option>
+        </select>
+      </div>
+      <button onClick={create} disabled={busy} style={btnPrimary}>{busy ? t("creating") : t("createMerchantBtn")}</button>
+      {createdInfo && !createdInfo.error && (
+        <div style={{ background: "#EBF5EF", border: "1px solid #22B573", borderRadius: 10, padding: 14, marginTop: 14 }}>
+          {t("accountCreatedFull")} {t("emailLabel")}: <strong>{createdInfo.email}</strong> / {t("password")}: <strong>{createdInfo.password}</strong>
+          <br />{t("handOffNote")}
+        </div>
+      )}
+      {createdInfo && createdInfo.error && <div style={{ color: "red", marginTop: 10 }}>{createdInfo.error}</div>}
+      <h2 style={{ marginTop: 32 }}>{t("currentMerchants")}</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {merchants.map((m) => (
+            <div key={m.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{m.name}</div>
+                  <div style={{ color: "#888", fontSize: 13 }}>{m.phone} — {m.type === "subscription" ? t("subscriptionType") : t("commissionType") + " " + m.commissionRate + "%"} — {m.currency}</div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => (editingId === m.id ? setEditingId(null) : startEdit(m))} style={btnGhost}>{editingId === m.id ? t("closeBtn") : t("editBtn")}</button>
+                  <button onClick={() => toggleStatus(m)} style={btnGhost}>{m.status === "approved" ? t("deactivate") : t("activate")}</button>
+                  <button onClick={() => resetPassword(m)} style={btnGhost}>{t("newPasswordBtn")}</button>
+                  <button onClick={() => deleteAccount(m)} style={btnDanger}>{t("deleteAccountBtn")}</button>
+                </div>
+              </div>
+              {editingId === m.id && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px dashed #ddd" }}>
+                  <select style={inputStyle} value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}>
+                    <option value="commission">{t("commissionType")}</option>
+                    <option value="subscription">{t("subscriptionType")}</option>
+                  </select>
+                  {editForm.type === "commission" && (
+                    <input type="number" style={inputStyle} placeholder={t("commissionRatePh")} value={editForm.commissionRate} onChange={(e) => setEditForm({ ...editForm, commissionRate: e.target.value })} />
+                  )}
+                  <select style={inputStyle} value={editForm.currency} onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}>
+                    <option value="SYP">{t("currencySYP")}</option>
+                    <option value="USD">{t("currencyUSD")}</option>
+                  </select>
+                  <button onClick={() => saveEdit(m.id)} style={btnPrimary}>{t("save")}</button>
+                </div>
+              )}
+            </div>
+          ))}
+          {merchants.length === 0 && <div style={{ color: "#888" }}>{t("noMerchantsYet")}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Admin: Coupons ============================= */
+function CouponsAdmin() {
+  const [, , t] = useLanguage();
+  const { data: coupons, loading } = useCollection("coupons");
+  const [form, setForm] = useState({ code: "", type: "percent", value: "" });
+  const [error, setError] = useState("");
+  const add = async () => {
+    setError("");
+    if (!form.code.trim() || !form.value) { setError("عبّي الكود والقيمة."); return; }
+    try {
+      await db.collection("coupons").doc(form.code.trim().toUpperCase()).set({
+        code: form.code.trim().toUpperCase(), type: form.type, value: Number(form.value), active: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      logAudit("إضافة كوبون", form.code.trim().toUpperCase());
+      setForm({ code: "", type: "percent", value: "" });
+    } catch (err) { setError("تعذّر الحفظ: " + err.message); }
+  };
+  const toggle = (c) => db.collection("coupons").doc(c.id).update({ active: !c.active });
+  const remove = (id) => db.collection("coupons").doc(id).delete();
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>كوبونات الخصم</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px,1fr))", gap: 12, marginBottom: 14 }}>
+        <input style={inputStyle} placeholder="كود الكوبون (مثال: EID20)" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+        <select style={inputStyle} value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+          <option value="percent">نسبة %</option>
+          <option value="fixed">مبلغ ثابت</option>
+        </select>
+        <input type="number" style={inputStyle} placeholder={form.type === "percent" ? "النسبة %" : "المبلغ"} value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} />
+      </div>
+      <button onClick={add} style={btnPrimary}>إضافة كوبون</button>
+      {error && <div style={{ color: "red", marginTop: 10 }}>{error}</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 24 }}>
+        {loading ? <Loading /> : coupons.map((c) => (
+          <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+            <div>
+              <strong>{c.code}</strong> — {c.type === "percent" ? c.value + "%" : c.value + " (مبلغ ثابت)"}
+              {!c.active && <span style={{ color: "#B23A3A", marginRight: 10 }}> (موقوف)</span>}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => toggle(c)} style={btnGhost}>{c.active ? t("deactivate") : t("activate")}</button>
+              <button onClick={() => remove(c.id)} style={btnDanger}>حذف</button>
+            </div>
+          </div>
+        ))}
+        {!loading && coupons.length === 0 && <div style={{ color: "#888" }}>لا يوجد كوبونات بعد.</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ============================= Admin: Store settings (exchange rate) ============================= */
+function StoreSettingsAdmin() {
+  const rate = useExchangeRate();
+  const payment = useAdminSettings("payment");
+  const whatsapp = useAdminSettings("whatsapp");
+  const loyalty = useAdminSettings("loyalty");
+  const delivery = useAdminSettings("delivery");
+  const referral = useAdminSettings("referral");
+  const [value, setValue] = useState("");
+  const [msg, setMsg] = useState("");
+  const [waNumber, setWaNumber] = useState("");
+  const [pointsPerCurrency, setPointsPerCurrency] = useState("1000");
+  const [pointValue, setPointValue] = useState("100");
+  const [deliveryFee, setDeliveryFee] = useState("0");
+  const [freeThreshold, setFreeThreshold] = useState("0");
+  const [referralPoints, setReferralPoints] = useState("100");
+  const [qrUploading, setQrUploading] = useState(false);
+  useEffect(() => { if (rate) setValue(String(rate)); }, [rate]);
+  useEffect(() => { if (whatsapp && whatsapp.number) setWaNumber(whatsapp.number); }, [whatsapp]);
+  useEffect(() => { if (loyalty) { if (loyalty.pointsPerCurrency) setPointsPerCurrency(String(loyalty.pointsPerCurrency)); if (loyalty.pointValue) setPointValue(String(loyalty.pointValue)); } }, [loyalty]);
+  useEffect(() => { if (delivery) { if (delivery.fee != null) setDeliveryFee(String(delivery.fee)); if (delivery.freeThreshold != null) setFreeThreshold(String(delivery.freeThreshold)); } }, [delivery]);
+  useEffect(() => { if (referral && referral.points) setReferralPoints(String(referral.points)); }, [referral]);
+
+  const save = async () => {
+    if (!value || Number(value) <= 0) return;
+    await db.collection("settings").doc("exchangeRate").set({ usdToSyp: Number(value) }, { merge: true });
+    logAudit("تحديث سعر الصرف", value);
+    setMsg("تم الحفظ."); setTimeout(() => setMsg(""), 2000);
+  };
+  const saveWhatsapp = async () => {
+    await db.collection("settings").doc("whatsapp").set({ number: waNumber.trim() }, { merge: true });
+    logAudit("تحديث رقم واتساب المنصة", waNumber.trim());
+  };
+  const saveLoyalty = async () => {
+    await db.collection("settings").doc("loyalty").set({ pointsPerCurrency: Number(pointsPerCurrency), pointValue: Number(pointValue) }, { merge: true });
+    logAudit("تحديث إعدادات نقاط الولاء", pointsPerCurrency + " / " + pointValue);
+  };
+  const saveDelivery = async () => {
+    await db.collection("settings").doc("delivery").set({ fee: Number(deliveryFee) || 0, freeThreshold: Number(freeThreshold) || 0 }, { merge: true });
+    logAudit("تحديث سعر التوصيل", deliveryFee + " / حد مجاني: " + freeThreshold);
+  };
+  const saveReferral = async () => {
+    await db.collection("settings").doc("referral").set({ points: Number(referralPoints) || 0 }, { merge: true });
+    logAudit("تحديث نقاط الدعوة", referralPoints);
+  };
+  const uploadQr = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setQrUploading(true);
+    try {
+      const base64 = await fileToCompressedBase64(file, 500, 0.7);
+      await db.collection("settings").doc("payment").set({ shamCashQrImage: base64 }, { merge: true });
+      logAudit("تحديث صورة QR شام كاش", "");
+    } finally { setQrUploading(false); }
+  };
+  const toggleCash = async () => {
+    await db.collection("settings").doc("payment").set({ cashOnDelivery: !(payment && payment.cashOnDelivery) }, { merge: true });
+  };
+
+  return (
+    <div style={{ padding: 20, maxWidth: 420 }}>
+      <h2>سعر الصرف</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>كم ليرة سورية تساوي الدولار الواحد؟ هالرقم بينعرض تلقائياً كسعر تقريبي بجانب أي منتج.</p>
+      <div style={{ display: "flex", gap: 10 }}>
+        <input type="number" style={{ ...inputStyle, flex: 1 }} placeholder="مثال: 15000" value={value} onChange={(e) => setValue(e.target.value)} />
+        <button onClick={save} style={btnPrimary}>حفظ</button>
+      </div>
+      {msg && <div style={{ color: "#22B573", marginTop: 8 }}>{msg}</div>}
+
+      <h2 style={{ marginTop: 32 }}>سعر التوصيل</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>رسم توصيل ثابت يضاف لكل طلب، مع حد أدنى للمبلغ يصير فوقه التوصيل مجاني (0 = بلا حد).</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <label style={{ fontSize: 13 }}>رسم التوصيل
+          <input type="number" style={{ ...inputStyle, width: "100%" }} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} />
+        </label>
+        <label style={{ fontSize: 13 }}>التوصيل مجاني فوق مبلغ (اختياري)
+          <input type="number" style={{ ...inputStyle, width: "100%" }} value={freeThreshold} onChange={(e) => setFreeThreshold(e.target.value)} />
+        </label>
+        <button onClick={saveDelivery} style={btnPrimary}>حفظ</button>
+      </div>
+
+      <h2 style={{ marginTop: 32 }}>طرق الدفع</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>صورة QR شام كاش تظهر للزبون لما يختار الدفع بشام كاش وقت تأكيد الطلب.</p>
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        {payment && payment.shamCashQrImage && <img src={payment.shamCashQrImage} alt="QR" style={{ width: 90, height: 90, borderRadius: 8, border: "1px solid #ddd", objectFit: "contain" }} />}
+        <div>
+          <input type="file" accept="image/*" onChange={uploadQr} />
+          {qrUploading && <div style={{ fontSize: 12, color: "#888" }}>جارِ الرفع…</div>}
+        </div>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, fontSize: 13 }}>
+        <input type="checkbox" checked={!!(payment && payment.cashOnDelivery)} onChange={toggleCash} /> فعّل الدفع النقدي عند الاستلام (يحاسب الزبون المندوب مباشرة)
+      </label>
+
+      <h2 style={{ marginTop: 32 }}>رقم واتساب المنصة</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>لما الزبون يأكد طلب، رح ينفتحله واتساب جاهز يبعت فيه تأكيد الطلب لهالرقم (بصيغة دولية بدون +، مثال: 963912345678).</p>
+      <div style={{ display: "flex", gap: 10 }}>
+        <input style={{ ...inputStyle, flex: 1 }} placeholder="963912345678" value={waNumber} onChange={(e) => setWaNumber(e.target.value)} />
+        <button onClick={saveWhatsapp} style={btnPrimary}>حفظ</button>
+      </div>
+
+      <h2 style={{ marginTop: 32 }}>نقاط الولاء</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>كل كم من المبلغ يكسب الزبون نقطة واحدة، وكل نقطة كم بتساوي كخصم بالسلة؟</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <label style={{ fontSize: 13 }}>نقطة واحدة لكل مبلغ (مثال 1000 = نقطة كل 1000 ل.س من المشتريات)
+          <input type="number" style={{ ...inputStyle, width: "100%" }} value={pointsPerCurrency} onChange={(e) => setPointsPerCurrency(e.target.value)} />
+        </label>
+        <label style={{ fontSize: 13 }}>قيمة كل 100 نقطة كخصم بالسلة
+          <input type="number" style={{ ...inputStyle, width: "100%" }} value={pointValue} onChange={(e) => setPointValue(e.target.value)} />
+        </label>
+        <button onClick={saveLoyalty} style={btnPrimary}>حفظ</button>
+      </div>
+
+      <h2 style={{ marginTop: 32 }}>برنامج دعوة الأصدقاء</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>كل زبون إله كود دعوة خاص فيه. لما يسجّل زبون جديد بهالكود، الاثنين (الداعي والمدعو) ياخدو نفس عدد النقاط.</p>
+      <div style={{ display: "flex", gap: 10 }}>
+        <input type="number" style={{ ...inputStyle, flex: 1 }} placeholder="مثال: 100" value={referralPoints} onChange={(e) => setReferralPoints(e.target.value)} />
+        <button onClick={saveReferral} style={btnPrimary}>حفظ</button>
+      </div>
+    </div>
+  );
+}
+
+/* ============================= Admin: Delivery reps ============================= */
+const ALL_PERMISSIONS = [
+  ["categories", "الفئات"],
+  ["merchants", "التجار"],
+  ["delivery", "المندوبون"],
+  ["orders", "الطلبات"],
+  ["cases", "المتابعة وحل الحالات"],
+  ["coupons", "الكوبونات"],
+  ["reports", "التقارير"],
+  ["storesettings", "الإعدادات (سعر الصرف والدفع)"],
+  ["returns", "طلبات الإرجاع"],
+  ["broadcast", "الإعلانات"],
+];
+
+function StaffAdmin() {
+  const { createManagedAccount } = useAuth();
+  const [, , t] = useLanguage();
+  const { data: allUsers, loading } = useCollection("users");
+  const staff = allUsers.filter((u) => u.role === "staff");
+  const [form, setForm] = useState({ name: "", phone: "", email: "", permissions: [] });
+  const [createdInfo, setCreatedInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editPerms, setEditPerms] = useState([]);
+
+  const togglePerm = (list, id, setList) => {
+    setList(list.includes(id) ? list.filter((p) => p !== id) : [...list, id]);
+  };
+
+  const create = async () => {
+    setCreatedInfo(null);
+    if (!form.name.trim() || !form.phone.trim() || !form.email.trim()) { setCreatedInfo({ error: "عبّي كل الحقول." }); return; }
+    if (!isValidPhone(form.phone)) { setCreatedInfo({ error: "رقم الهاتف غير صحيح." }); return; }
+    if (form.permissions.length === 0) { setCreatedInfo({ error: "اختار صلاحية وحدة عالأقل." }); return; }
+    setBusy(true);
+    const password = genPassword();
+    try {
+      await createManagedAccount({
+        email: form.email.trim(), password, name: form.name.trim(), phone: form.phone.trim(), role: "staff",
+        extra: { permissions: form.permissions, status: "active" },
+      });
+      logAudit("إنشاء حساب موظف", form.name.trim() + " — صلاحيات: " + form.permissions.join(", "));
+      setCreatedInfo({ email: form.email.trim(), password });
+      setForm({ name: "", phone: "", email: "", permissions: [] });
+    } catch (err) { setCreatedInfo({ error: firebaseErrorToArabic(err) }); } finally { setBusy(false); }
+  };
+  const resetPassword = async (s) => {
+    try { await auth.sendPasswordResetEmail(s.email); alert("انبعث رابط إعادة تعيين كلمة المرور لإيميل الموظف: " + s.email); }
+    catch (err) { alert("تعذّر الإرسال: " + err.message); }
+  };
+  const deleteAccount = async (s) => {
+    if (!window.confirm("متأكد بدك تحذف حساب \"" + s.name + "\"؟")) return;
+    await db.collection("users").doc(s.id).delete();
+    logAudit("حذف حساب موظف", s.name + " (" + s.email + ")");
+  };
+  const startEdit = (s) => { setEditingId(s.id); setEditPerms(s.permissions || []); };
+  const saveEdit = async (id) => {
+    await db.collection("users").doc(id).update({ permissions: editPerms });
+    setEditingId(null);
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>إضافة موظف جديد</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+        <input style={inputStyle} placeholder="اسم الموظف" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input style={inputStyle} placeholder={t("phoneLabel")} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <input style={inputStyle} placeholder={t("emailLabel")} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 13, color: "#888", marginBottom: 8 }}>الصلاحيات — شو يقدر يشوف/يدير هالموظف:</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {ALL_PERMISSIONS.map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => togglePerm(form.permissions, id, (p) => setForm({ ...form, permissions: p }))}
+              style={{ padding: "7px 16px", borderRadius: 999, border: "1px solid #eee", background: form.permissions.includes(id) ? "var(--purple)" : "#F0EEE8", color: form.permissions.includes(id) ? "#fff" : "#000" }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <button onClick={create} disabled={busy} style={btnPrimary}>{busy ? t("creating") : "إنشاء حساب الموظف"}</button>
+      {createdInfo && !createdInfo.error && (
+        <div style={{ background: "#EBF5EF", border: "1px solid #22B573", borderRadius: 10, padding: 14, marginTop: 14 }}>
+          الإيميل: <strong>{createdInfo.email}</strong> / كلمة المرور: <strong>{createdInfo.password}</strong>
+        </div>
+      )}
+      {createdInfo && createdInfo.error && <div style={{ color: "red", marginTop: 10 }}>{createdInfo.error}</div>}
+      <h2 style={{ marginTop: 32 }}>الموظفون الحاليون</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {staff.map((s) => (
+            <div key={s.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{s.name}</div>
+                  <div style={{ color: "#888", fontSize: 13 }}>{s.phone} — صلاحيات: {(s.permissions || []).map((p) => (ALL_PERMISSIONS.find((x) => x[0] === p) || [p, p])[1]).join("، ") || "لا شي"}</div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => (editingId === s.id ? setEditingId(null) : startEdit(s))} style={btnGhost}>{editingId === s.id ? "إغلاق" : "تعديل الصلاحيات"}</button>
+                  <button onClick={() => resetPassword(s)} style={btnGhost}>{t("newPasswordBtn")}</button>
+                  <button onClick={() => deleteAccount(s)} style={btnDanger}>{t("deleteAccountBtn")}</button>
+                </div>
+              </div>
+              {editingId === s.id && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #ddd" }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                    {ALL_PERMISSIONS.map(([id, label]) => (
+                      <button
+                        key={id}
+                        onClick={() => togglePerm(editPerms, id, setEditPerms)}
+                        style={{ padding: "7px 16px", borderRadius: 999, border: "1px solid #eee", background: editPerms.includes(id) ? "var(--purple)" : "#F0EEE8", color: editPerms.includes(id) ? "#fff" : "#000" }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={() => saveEdit(s.id)} style={btnPrimary}>حفظ الصلاحيات</button>
+                </div>
+              )}
+            </div>
+          ))}
+          {staff.length === 0 && <div style={{ color: "#888" }}>لا يوجد موظفون بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeliveryAdmin() {
+  const { createManagedAccount } = useAuth();
+  const [, , t] = useLanguage();
+  const { data: allUsers, loading } = useCollection("users");
+  const reps = allUsers.filter((u) => u.role === "delivery");
+  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const [createdInfo, setCreatedInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const create = async () => {
+    setCreatedInfo(null);
+    if (!form.name.trim() || !form.phone.trim() || !form.email.trim()) { setCreatedInfo({ error: "عبّي كل الحقول." }); return; }
+    if (!isValidPhone(form.phone)) { setCreatedInfo({ error: "رقم الهاتف غير صحيح." }); return; }
+    setBusy(true);
+    const password = genPassword();
+    try {
+      await createManagedAccount({ email: form.email.trim(), password, name: form.name.trim(), phone: form.phone.trim(), role: "delivery", extra: { status: "active" } });
+      logAudit("إنشاء حساب مندوب", form.name.trim() + " (" + form.email.trim() + ")");
+      setCreatedInfo({ email: form.email.trim(), password });
+      setForm({ name: "", phone: "", email: "" });
+    } catch (err) { setCreatedInfo({ error: firebaseErrorToArabic(err) }); } finally { setBusy(false); }
+  };
+  const toggleStatus = async (r) => { await db.collection("users").doc(r.id).update({ status: r.status === "active" ? "inactive" : "active" }); };
+  const resetPassword = async (r) => {
+    try { await auth.sendPasswordResetEmail(r.email); alert("انبعث رابط إعادة تعيين كلمة المرور لإيميل المندوب: " + r.email); }
+    catch (err) { alert("تعذّر الإرسال: " + err.message); }
+  };
+  const deleteAccount = async (r) => {
+    if (!window.confirm("متأكد بدك تحذف حساب \"" + r.name + "\"؟ هاد بيلغي كل صلاحياته بالتطبيق فوراً.")) return;
+    await db.collection("users").doc(r.id).delete();
+    logAudit("حذف حساب مندوب", r.name + " (" + r.email + ")");
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>إضافة مندوب توصيل</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+        <input style={inputStyle} placeholder={t("nameLabel")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input style={inputStyle} placeholder={t("phoneLabel")} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <input style={inputStyle} placeholder={t("emailLabel")} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+      </div>
+      <button onClick={create} disabled={busy} style={btnPrimary}>{busy ? t("creating") : "إنشاء حساب المندوب"}</button>
+      {createdInfo && !createdInfo.error && (
+        <div style={{ background: "#EBF5EF", border: "1px solid #22B573", borderRadius: 10, padding: 14, marginTop: 14 }}>
+          الإيميل: <strong>{createdInfo.email}</strong> / كلمة المرور: <strong>{createdInfo.password}</strong>
+        </div>
+      )}
+      {createdInfo && createdInfo.error && <div style={{ color: "red", marginTop: 10 }}>{createdInfo.error}</div>}
+      <h2 style={{ marginTop: 32 }}>المندوبون الحاليون</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {reps.map((r) => (
+            <div key={r.id} className="lift" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8, background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div>
+                <div style={{ fontWeight: 700 }}>{r.name}</div>
+                <div style={{ color: "#888", fontSize: 13 }}>{r.phone}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => toggleStatus(r)} style={btnGhost}>{r.status === "active" ? t("deactivate") : t("activate")}</button>
+                <button onClick={() => resetPassword(r)} style={btnGhost}>{t("newPasswordBtn")}</button>
+                <button onClick={() => deleteAccount(r)} style={btnDanger}>{t("deleteAccountBtn")}</button>
+              </div>
+            </div>
+          ))}
+          {reps.length === 0 && <div style={{ color: "#888" }}>لا يوجد مندوبون بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Admin: Orders ============================= */
+function AuditLogAdmin() {
+  const { data: logs, loading } = useCollection("auditLog", "at");
+  const sorted = [...logs].reverse();
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>سجل النشاط</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {sorted.map((l) => (
+            <div key={l.id} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 10, padding: 12, fontSize: 13 }}>
+              <div><strong>{l.action}</strong> — {l.details}</div>
+              <div style={{ color: "#888", fontSize: 12, marginTop: 3 }}>بواسطة {l.by} {l.at && l.at.toDate ? "— " + l.at.toDate().toLocaleString("ar") : ""}</div>
+            </div>
+          ))}
+          {sorted.length === 0 && <div style={{ color: "#888" }}>لا يوجد نشاط مسجّل بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrdersAdmin() {
+  const { data: orders, loading } = useCollection("orders");
+  const { data: allUsers } = useCollection("users");
+  const reps = allUsers.filter((u) => u.role === "delivery" && u.status === "active");
+  const confirmPayment = (id, o) => { db.collection("orders").doc(id).update({ status: "processing" }); logAudit("تأكيد دفع طلب", id); notifyUser(o.customerId, "تم تأكيد الدفع", "طلبك #" + id.slice(-5) + " قيد التجهيز الآن."); };
+  const assignRep = (id, repId) => db.collection("orders").doc(id).update({ deliveryRepId: repId });
+  const sendForDelivery = (id, o) => { db.collection("orders").doc(id).update({ status: "out_for_delivery" }); notifyUser(o.customerId, "طلبك بالطريق", "طلبك #" + id.slice(-5) + " صار مع المندوب."); if (o.deliveryRepId) notifyUser(o.deliveryRepId, "طلب جديد للتوصيل", "أُسند إليك طلب #" + id.slice(-5)); };
+  const cancel = (id, o) => { db.collection("orders").doc(id).update({ status: "cancelled" }); logAudit("إلغاء طلب", id); notifyUser(o.customerId, "تم إلغاء طلبك", "طلبك #" + id.slice(-5) + " انلغى."); };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>الطلبات</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[...orders].reverse().map((o) => (
+            <div key={o.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <strong>طلب #{o.id.slice(-5)} — {o.customerName}</strong>
+                <StatusTag status={o.status} />
+              </div>
+              {o.items.map((it, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+                  <span>{it.name} × {it.qty}</span><span>{it.price * it.qty}</span>
+                </div>
+              ))}
+              <div style={{ fontWeight: 700, marginTop: 6 }}>الإجمالي: {o.total}</div>
+              {o.paymentMethod && <div style={{ fontSize: 12, color: "#888" }}>طريقة الدفع: {o.paymentMethod === "shamcash" ? "شام كاش" : "نقدي عند الاستلام"}</div>}
+              {o.paymentProofImage && (
+                <div style={{ marginTop: 6 }}>
+                  <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>إثبات التحويل:</div>
+                  <img src={o.paymentProofImage} alt="إثبات دفع" onClick={() => window.open(o.paymentProofImage, "_blank")} style={{ width: 80, height: 80, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: "1px solid #ddd" }} />
+                </div>
+              )}
+              {o.paymentNote && <div style={{ fontSize: 13, color: "#888" }}>ملاحظة: {o.paymentNote}</div>}
+              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                {o.status === "awaiting_payment_review" && (
+                  <React.Fragment>
+                    <button onClick={() => confirmPayment(o.id, o)} style={btnPrimary}>تأكيد الدفع</button>
+                    <button onClick={() => cancel(o.id, o)} style={btnDanger}>إلغاء</button>
+                  </React.Fragment>
+                )}
+                {o.status === "processing" && (
+                  <React.Fragment>
+                    <select value={o.deliveryRepId || ""} onChange={(e) => assignRep(o.id, e.target.value)} style={inputStyle}>
+                      <option value="">اختر مندوب</option>
+                      {reps.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                    <button onClick={() => sendForDelivery(o.id, o)} disabled={!o.deliveryRepId} style={btnPrimary}>إرسال للتوصيل</button>
+                  </React.Fragment>
+                )}
+              </div>
+            </div>
+          ))}
+          {orders.length === 0 && <div style={{ color: "#888" }}>لا يوجد طلبات بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Shared: dark mode toggle ============================= */
+function DarkModeToggle({ dark: darkHeader }) {
+  const [dark, setDark] = useDarkMode();
+  return (
+    <button onClick={() => setDark((d) => !d)} style={{ background: "transparent", border: darkHeader ? "1px solid rgba(255,255,255,.3)" : "1px solid #000", color: darkHeader ? "#fff" : "#000", borderRadius: 999, padding: "6px 12px" }}>
+      {dark ? "☀️" : "🌙"}
+    </button>
+  );
+}
+
+/* ============================= Shared: notification bell ============================= */
+function NotificationBell({ dark }) {
+  const { user } = useAuth();
+  const { data: notifs } = useQuery("notifications", "userId", "==", user ? user.uid : null);
+  const [open, setOpen] = useState(false);
+  const sorted = [...notifs].sort((a, b) => (b.createdAt && a.createdAt ? b.createdAt.toMillis() - a.createdAt.toMillis() : 0));
+  const unread = sorted.filter((n) => !n.read).length;
+  const markAllRead = () => {
+    sorted.filter((n) => !n.read).forEach((n) => db.collection("notifications").doc(n.id).update({ read: true }));
+  };
+  return (
+    <div style={{ position: "relative" }}>
+      <button onClick={() => { setOpen((o) => !o); if (!open) markAllRead(); }} style={{ background: "transparent", border: dark ? "1px solid rgba(255,255,255,.3)" : "1px solid #000", color: dark ? "#fff" : "#000", borderRadius: 999, padding: "6px 14px", position: "relative" }}>
+        🔔{unread > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "#B23A3A", color: "#fff", borderRadius: 999, fontSize: 10, padding: "1px 5px" }}>{unread}</span>}
+      </button>
+      {open && (
+        <div style={{ position: "absolute", top: "110%", left: 0, background: "#fff", color: "#000", borderRadius: 12, width: 280, maxHeight: 320, overflow: "auto", boxShadow: "0 12px 30px rgba(0,0,0,.25)", zIndex: 999 }}>
+          {sorted.length === 0 && <div style={{ padding: 16, color: "#888", fontSize: 13 }}>ما في إشعارات.</div>}
+          {sorted.map((n) => (
+            <div key={n.id} style={{ padding: 12, borderBottom: "1px solid #eee" }}>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{n.title}</div>
+              <div style={{ fontSize: 12, color: "#666" }}>{n.body}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Shared: live GPS tracking map ============================= */
+function LiveTrackingMap({ repId }) {
+  const rep = useDoc("users", repId);
+  const mapRef = React.useRef(null);
+  const leafletMapRef = React.useRef(null);
+  const markerRef = React.useRef(null);
+  const [leafletReady, setLeafletReady] = useState(false);
+  const [leafletError, setLeafletError] = useState(false);
+
+  useEffect(() => {
+    loadLeafletCss();
+    loadScriptOnce("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js").then(() => setLeafletReady(true)).catch(() => setLeafletError(true));
+  }, []);
+
+  useEffect(() => {
+    if (!leafletReady || !mapRef.current || leafletMapRef.current) return;
+    leafletMapRef.current = L.map(mapRef.current).setView([33.5138, 36.2765], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(leafletMapRef.current);
+  }, [leafletReady]);
+
+  useEffect(() => {
+    if (!leafletMapRef.current || !rep || !rep.location) return;
+    const { lat, lng } = rep.location;
+    leafletMapRef.current.setView([lat, lng], 15);
+    if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
+    else markerRef.current = L.marker([lat, lng]).addTo(leafletMapRef.current).bindPopup("موقع المندوب الحالي");
+  }, [rep]);
+
+  if (leafletError) return <div style={{ fontSize: 12, color: "#888" }}>تعذّر تحميل الخريطة (تحقق من اتصال الإنترنت).</div>;
+  return (
+    <div>
+      <div ref={mapRef} style={{ width: "100%", height: 220, borderRadius: 12, overflow: "hidden", border: "1px solid #eee" }}></div>
+      {!(rep && rep.location) && <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>بانتظار المندوب يفعّل مشاركة موقعه…</div>}
+    </div>
+  );
+}
+
+/* ============================= Cases (متابعة وحل القصص) ============================= */
+function CaseChat({ caseId }) {
+  const { user, profile } = useAuth();
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  useEffect(() => {
+    const unsub = db.collection("cases").doc(caseId).collection("messages").orderBy("createdAt").onSnapshot(
+      (snap) => setMessages(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {}
+    );
+    return unsub;
+  }, [caseId]);
+  const send = async () => {
+    if (!text.trim()) return;
+    await db.collection("cases").doc(caseId).collection("messages").add({
+      senderId: user.uid, senderName: (profile && profile.name) || "", senderRole: (profile && profile.role) || "",
+      text: text.trim(), createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    await db.collection("cases").doc(caseId).update({ updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    setText("");
+  };
+  return (
+    <div>
+      <div style={{ maxHeight: 260, overflow: "auto", display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+        {messages.map((m) => (
+          <div key={m.id} style={{ alignSelf: m.senderId === user.uid ? "flex-end" : "flex-start", background: m.senderId === user.uid ? "var(--purple)" : "#F0EEE8", color: m.senderId === user.uid ? "#fff" : "#000", borderRadius: 12, padding: "8px 12px", maxWidth: "80%" }}>
+            <div style={{ fontSize: 11, opacity: .8, marginBottom: 2 }}>{m.senderName}</div>
+            <div style={{ fontSize: 14 }}>{m.text}</div>
+          </div>
+        ))}
+        {messages.length === 0 && <div style={{ color: "#888", fontSize: 13 }}>ما في رسائل بعد.</div>}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input style={{ ...inputStyle, flex: 1 }} placeholder="اكتب رسالة…" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} />
+        <button onClick={send} style={btnPrimary}>إرسال</button>
+      </div>
+    </div>
+  );
+}
+
+const CASE_STATUS_LABELS = { open: ["مفتوحة", "#B58A2A"], in_progress: ["قيد المتابعة", "#2A6FB5"], resolved: ["محلولة", "#1F7A4C"] };
+
+function MyCases() {
+  const { user, profile } = useAuth();
+  const { data: cases, loading } = useQuery("cases", "openedBy", "==", user ? user.uid : null);
+  const [openNew, setOpenNew] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [description, setDescription] = useState("");
+  const [activeCase, setActiveCase] = useState(null);
+  const submit = async () => {
+    if (!subject.trim()) return;
+    const ref = await db.collection("cases").add({
+      subject: subject.trim(), description: description.trim(), openedBy: user.uid,
+      openedByName: (profile && profile.name) || "", openedByRole: (profile && profile.role) || "",
+      status: "open", assignedTo: null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(), updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    setSubject(""); setDescription(""); setOpenNew(false); setActiveCase(ref.id);
+  };
+  const sorted = [...cases].sort((a, b) => (b.createdAt && a.createdAt ? b.createdAt.toMillis() - a.createdAt.toMillis() : 0));
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>الدعم — حالاتي</h2>
+      <button onClick={() => setOpenNew((o) => !o)} style={btnPrimary}>{openNew ? "إلغاء" : "+ فتح حالة جديدة"}</button>
+      {openNew && (
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8, maxWidth: 420 }}>
+          <input style={inputStyle} placeholder="عنوان المشكلة" value={subject} onChange={(e) => setSubject(e.target.value)} />
+          <textarea style={{ ...inputStyle, minHeight: 70 }} placeholder="تفاصيل المشكلة" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <button onClick={submit} style={btnPrimary}>إرسال</button>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 20 }}>
+        {loading ? <Loading /> : sorted.map((c) => (
+          <div key={c.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14, cursor: "pointer" }} onClick={() => setActiveCase(activeCase === c.id ? null : c.id)}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <strong>{c.subject}</strong>
+              <span style={{ color: (CASE_STATUS_LABELS[c.status] || ["", "#888"])[1], fontSize: 12 }}>{(CASE_STATUS_LABELS[c.status] || [c.status])[0]}</span>
+            </div>
+            {c.description && <div style={{ color: "#666", fontSize: 13, marginTop: 4 }}>{c.description}</div>}
+            {activeCase === c.id && <div style={{ marginTop: 12, borderTop: "1px dashed #ddd", paddingTop: 10 }} onClick={(e) => e.stopPropagation()}><CaseChat caseId={c.id} /></div>}
+          </div>
+        ))}
+        {!loading && sorted.length === 0 && <div style={{ color: "#888" }}>ما في حالات مفتوحة.</div>}
+      </div>
+    </div>
+  );
+}
+
+function CasesAdmin() {
+  const { user, profile } = useAuth();
+  const { data: cases, loading } = useCollection("cases", "updatedAt");
+  const [activeCase, setActiveCase] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const sorted = [...cases].reverse().filter((c) => filter === "all" || c.status === filter);
+  const assignToMe = (c) => { db.collection("cases").doc(c.id).update({ assignedTo: user.uid, assignedToName: (profile && profile.name) || "", status: "in_progress" }); notifyUser(c.openedBy, "صارت حالتك قيد المتابعة", (profile && profile.name) + " عم يتابع مشكلتك."); };
+  const setStatus = (c, status) => { db.collection("cases").doc(c.id).update({ status }); if (status === "resolved") notifyUser(c.openedBy, "تم حل حالتك", "\"" + c.subject + "\" صارت محلولة."); };
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>المتابعة وحل الحالات</h2>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+        {[["all", "الكل"], ["open", "مفتوحة"], ["in_progress", "قيد المتابعة"], ["resolved", "محلولة"]].map(([id, label]) => (
+          <button key={id} onClick={() => setFilter(id)} style={{ padding: "7px 16px", borderRadius: 999, border: "1px solid #eee", background: filter === id ? "var(--purple)" : "#F0EEE8", color: filter === id ? "#fff" : "#000" }}>{label}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {loading ? <Loading /> : sorted.map((c) => (
+          <div key={c.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
+              <div>
+                <strong>{c.subject}</strong>
+                <div style={{ color: "#888", fontSize: 12 }}>بواسطة {c.openedByName} ({c.openedByRole === "merchant" ? "تاجر" : "زبون"}){c.assignedToName ? " — يتابعها: " + c.assignedToName : ""}</div>
+              </div>
+              <span style={{ color: (CASE_STATUS_LABELS[c.status] || ["", "#888"])[1], fontSize: 12 }}>{(CASE_STATUS_LABELS[c.status] || [c.status])[0]}</span>
+            </div>
+            {c.description && <div style={{ color: "#666", fontSize: 13, marginTop: 4 }}>{c.description}</div>}
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              {!c.assignedTo && <button onClick={() => assignToMe(c)} style={btnPrimary}>تابعها أنا</button>}
+              {c.status !== "resolved" && <button onClick={() => setStatus(c, "resolved")} style={btnGhost}>وسمها محلولة</button>}
+              {c.status === "resolved" && <button onClick={() => setStatus(c, "in_progress")} style={btnGhost}>إعادة فتح</button>}
+              <button onClick={() => setActiveCase(activeCase === c.id ? null : c.id)} style={btnGhost}>{activeCase === c.id ? "إخفاء المحادثة" : "فتح المحادثة"}</button>
+            </div>
+            {activeCase === c.id && <div style={{ marginTop: 12, borderTop: "1px dashed #ddd", paddingTop: 10 }}><CaseChat caseId={c.id} /></div>}
+          </div>
+        ))}
+        {!loading && sorted.length === 0 && <div style={{ color: "#888" }}>ما في حالات.</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ============================= Admin: manage other full admins ============================= */
+function AdminsAdmin() {
+  const { createManagedAccount, user: currentUser } = useAuth();
+  const [, , t] = useLanguage();
+  const { data: allUsers, loading } = useCollection("users");
+  const admins = allUsers.filter((u) => u.role === "admin");
+  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const [createdInfo, setCreatedInfo] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const create = async () => {
+    setCreatedInfo(null);
+    if (!form.name.trim() || !form.phone.trim() || !form.email.trim()) { setCreatedInfo({ error: "عبّي كل الحقول." }); return; }
+    if (!isValidPhone(form.phone)) { setCreatedInfo({ error: "رقم الهاتف غير صحيح." }); return; }
+    setBusy(true);
+    const password = genPassword();
+    try {
+      await createManagedAccount({ email: form.email.trim(), password, name: form.name.trim(), phone: form.phone.trim(), role: "admin" });
+      logAudit("إنشاء حساب أدمن جديد", form.name.trim() + " (" + form.email.trim() + ")");
+      setCreatedInfo({ email: form.email.trim(), password });
+      setForm({ name: "", phone: "", email: "" });
+    } catch (err) { setCreatedInfo({ error: firebaseErrorToArabic(err) }); } finally { setBusy(false); }
+  };
+  const removeAdmin = async (a) => {
+    if (a.id === currentUser.uid) { alert("ما فيك تحذف حسابك الخاص."); return; }
+    if (!window.confirm("متأكد بدك تحذف صلاحية الأدمن الكاملة عن \"" + a.name + "\"؟")) return;
+    await db.collection("users").doc(a.id).delete();
+    logAudit("حذف حساب أدمن", a.name + " (" + a.email + ")");
+  };
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>إضافة أدمن كامل الصلاحيات</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>⚠️ الأدمن الكامل يقدر يشوف ويعدّل كل شي بالمنصة، بلا استثناء — استخدم هاد بحذر وبس لأشخاص موثوقين تماماً.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+        <input style={inputStyle} placeholder={t("nameLabel")} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input style={inputStyle} placeholder={t("phoneLabel")} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+        <input style={inputStyle} placeholder={t("emailLabel")} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+      </div>
+      <button onClick={create} disabled={busy} style={btnPrimary}>{busy ? t("creating") : "إنشاء حساب أدمن"}</button>
+      {createdInfo && !createdInfo.error && (
+        <div style={{ background: "#EBF5EF", border: "1px solid #22B573", borderRadius: 10, padding: 14, marginTop: 14 }}>
+          الإيميل: <strong>{createdInfo.email}</strong> / كلمة المرور: <strong>{createdInfo.password}</strong>
+        </div>
+      )}
+      {createdInfo && createdInfo.error && <div style={{ color: "red", marginTop: 10 }}>{createdInfo.error}</div>}
+      <h2 style={{ marginTop: 32 }}>المدراء الحاليون</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {admins.map((a) => (
+            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div>
+                <strong>{a.name}</strong>{a.id === currentUser.uid && <span style={{ color: "#888", fontSize: 12 }}> (أنت)</span>}
+                <div style={{ color: "#888", fontSize: 13 }}>{a.email} — {a.phone}</div>
+              </div>
+              {a.id !== currentUser.uid && <button onClick={() => removeAdmin(a)} style={btnDanger}>حذف</button>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Admin: platform-wide reports ============================= */
+function AdminReports() {
+  const { data: orders, loading: ordersLoading } = useCollection("orders");
+  const { data: users, loading: usersLoading } = useCollection("users");
+  const delivered = orders.filter((o) => o.status === "delivered");
+  const totalRevenue = delivered.reduce((s, o) => s + (o.total || 0), 0);
+  const byStatus = {};
+  orders.forEach((o) => { byStatus[o.status] = (byStatus[o.status] || 0) + 1; });
+  const merchantRevenue = {};
+  delivered.forEach((o) => o.items.forEach((it) => { merchantRevenue[it.merchantId] = (merchantRevenue[it.merchantId] || { name: "", total: 0 }); merchantRevenue[it.merchantId].total += it.price * it.qty; }));
+  const merchantsById = {}; users.forEach((u) => { merchantsById[u.id] = u.name; });
+  const topMerchants = Object.entries(merchantRevenue).map(([id, v]) => [merchantsById[id] || id, v.total]).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const roleCounts = {};
+  users.forEach((u) => { roleCounts[u.role] = (roleCounts[u.role] || 0) + 1; });
+  const maxMerchantRev = topMerchants.length ? topMerchants[0][1] : 1;
+  const loading = ordersLoading || usersLoading;
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>تقارير المنصة</h2>
+      {loading ? <Loading /> : (
+        <React.Fragment>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 16, minWidth: 150 }}>
+              <div style={{ color: "#888", fontSize: 12 }}>إجمالي الإيرادات (طلبات مسلّمة)</div>
+              <div style={{ fontWeight: 800, fontSize: 22, color: "#9B3FE8" }}>{totalRevenue}</div>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 16, minWidth: 150 }}>
+              <div style={{ color: "#888", fontSize: 12 }}>إجمالي الطلبات</div>
+              <div style={{ fontWeight: 800, fontSize: 22 }}>{orders.length}</div>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 16, minWidth: 150 }}>
+              <div style={{ color: "#888", fontSize: 12 }}>عدد المستخدمين</div>
+              <div style={{ fontWeight: 800, fontSize: 22 }}>{users.length}</div>
+            </div>
+          </div>
+          <h3>الطلبات حسب الحالة</h3>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+            {Object.entries(byStatus).map(([status, count]) => (
+              <div key={status} style={{ background: "#F0EEE8", borderRadius: 999, padding: "6px 14px", fontSize: 13 }}><StatusTag status={status} /> × {count}</div>
+            ))}
+          </div>
+          <h3>المستخدمون حسب الدور</h3>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24, fontSize: 13, color: "#666" }}>
+            {Object.entries(roleCounts).map(([role, count]) => <span key={role}>{role}: {count}</span>)}
+          </div>
+          <h3>أفضل التجار (حسب الإيرادات المسلّمة)</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {topMerchants.map(([name, total]) => (
+              <div key={name}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}><span>{name}</span><span>{total}</span></div>
+                <div style={{ background: "#eee", borderRadius: 999, height: 8 }}>
+                  <div style={{ width: (total / maxMerchantRev * 100) + "%", background: "var(--purple)", height: 8, borderRadius: 999 }}></div>
+                </div>
+              </div>
+            ))}
+            {topMerchants.length === 0 && <div style={{ color: "#888" }}>لا يوجد بيانات بعد.</div>}
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Admin: returns/exchange requests ============================= */
+function ReturnsAdmin() {
+  const { data: returns, loading } = useCollection("returns");
+  const sorted = [...returns].reverse();
+  const setStatus = (r, status) => {
+    db.collection("returns").doc(r.id).update({ status });
+    logAudit("تحديث طلب إرجاع", r.itemName + " → " + status);
+    notifyUser(r.customerId, status === "approved" ? "تم قبول طلب الإرجاع" : "تم رفض طلب الإرجاع", r.itemName);
+  };
+  const map = { pending: ["قيد المراجعة", "#B58A2A"], approved: ["مقبول", "#1F7A4C"], rejected: ["مرفوض", "#B23A3A"] };
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>طلبات الإرجاع والاستبدال</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {sorted.map((r) => (
+            <div key={r.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <strong>{r.itemName}</strong>
+                <span style={{ color: (map[r.status] || ["", "#888"])[1], fontSize: 12 }}>{(map[r.status] || [r.status])[0]}</span>
+              </div>
+              <div style={{ color: "#888", fontSize: 13 }}>الزبون: {r.customerName} — طلب #{r.orderId.slice(-5)}</div>
+              {r.reason && <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>السبب: {r.reason}</div>}
+              {r.status === "pending" && (
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button onClick={() => setStatus(r, "approved")} style={btnPrimary}>قبول</button>
+                  <button onClick={() => setStatus(r, "rejected")} style={btnDanger}>رفض</button>
+                </div>
+              )}
+            </div>
+          ))}
+          {sorted.length === 0 && <div style={{ color: "#888" }}>لا يوجد طلبات إرجاع.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= Admin: backup / export ============================= */
+/* ============================= Admin: broadcast announcement ============================= */
+function BroadcastAdmin() {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState("");
+
+  const send = async () => {
+    if (!title.trim()) return;
+    if (!window.confirm("متأكد بدك تبعت هالإعلان لكل الزبائن؟")) return;
+    setBusy(true); setResult("");
+    try {
+      const snap = await db.collection("users").where("role", "==", "customer").get();
+      snap.docs.forEach((doc) => notifyUser(doc.id, title.trim(), body.trim()));
+      logAudit("بث إعلان لكل الزبائن", title.trim());
+      setResult("تم إرسال الإعلان لـ" + snap.docs.length + " زبون. (وصل كإشعار داخل التطبيق للكل، وكإشعار push حقيقي لمين فعّل الإشعارات على جهازه)");
+      setTitle(""); setBody("");
+    } catch (err) { setResult("حصل خطأ: " + err.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ padding: 20, maxWidth: 420 }}>
+      <h2>إرسال إعلان لكل الزبائن</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>مثال: عرض جديد، خصم موسمي، افتتاح متجر جديد… بيوصل فوراً لكل الزبائن دفعة وحدة.</p>
+      <input style={{ ...inputStyle, width: "100%", marginBottom: 8 }} placeholder="عنوان الإعلان" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <textarea style={{ ...inputStyle, width: "100%", minHeight: 80 }} placeholder="نص الإعلان" value={body} onChange={(e) => setBody(e.target.value)} />
+      <button onClick={send} disabled={busy || !title.trim()} style={{ ...btnPrimary, marginTop: 10 }}>{busy ? "جارِ الإرسال…" : "📢 إرسال للجميع"}</button>
+      {result && <div style={{ marginTop: 10, color: "#22B573", fontSize: 13 }}>{result}</div>}
+    </div>
+  );
+}
+
+function BackupAdmin() {
+  const [busy, setBusy] = useState(false);
+  const exportAll = async () => {
+    setBusy(true);
+    try {
+      const collections = ["users", "products", "orders", "categories", "coupons", "returns"];
+      const result = {};
+      for (const name of collections) {
+        const snap = await db.collection(name).get();
+        result[name] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      }
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "we-in-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      a.click();
+      URL.revokeObjectURL(url);
+      logAudit("تصدير نسخة احتياطية", "");
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ padding: 20, maxWidth: 420 }}>
+      <h2>نسخة احتياطية</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>بيصدّر ملف JSON فيه كل البيانات (المستخدمين، المنتجات، الطلبات، الفئات، الكوبونات، طلبات الإرجاع) لجهازك مباشرة. خزّنه بمكان آمن، ونفّذها بشكل دوري (مثلاً أسبوعياً).</p>
+      <button onClick={exportAll} disabled={busy} style={btnPrimary}>{busy ? "جارِ التصدير…" : "⬇️ تصدير نسخة احتياطية الآن"}</button>
+    </div>
+  );
+}
+
+/* ============================= Admin dashboard shell ============================= */
+function ChangePasswordPanel() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMsg, setPushMsg] = useState("");
+
+  const submit = async () => {
+    setError(""); setMsg("");
+    if (next.trim().length < 8) { setError("كلمة المرور الجديدة لازم تكون 8 أحرف/أرقام على الأقل."); return; }
+    setBusy(true);
+    try {
+      // Firebase requires a recent login for sensitive actions like changing
+      // a password — re-authenticating with the current password first
+      // avoids a confusing "requires-recent-login" error.
+      const cred = firebase.auth.EmailAuthProvider.credential(auth.currentUser.email, current);
+      await auth.currentUser.reauthenticateWithCredential(cred);
+      await auth.currentUser.updatePassword(next.trim());
+      setMsg("تم تغيير كلمة المرور بنجاح.");
+      setCurrent(""); setNext("");
+    } catch (err) { setError(firebaseErrorToArabic(err)); } finally { setBusy(false); }
+  };
+
+  const enablePush = async () => {
+    setPushBusy(true); setPushMsg("");
+    const ok = await enablePushNotifications(auth.currentUser.uid);
+    if (ok) setPushMsg("تم تفعيل الإشعارات على هالجهاز ✓");
+    setPushBusy(false);
+  };
+
+  return (
+    <div style={{ padding: 20, maxWidth: 380 }}>
+      <h2>الإشعارات</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>فعّل إشعارات هالجهاز حتى توصلك تنبيهات حتى لو الموقع/التطبيق مسكّر.</p>
+      <button onClick={enablePush} disabled={pushBusy} style={btnPrimary}>{pushBusy ? "جارِ التفعيل…" : "🔔 فعّل الإشعارات على هالجهاز"}</button>
+      {pushMsg && <div style={{ color: "#22B573", fontSize: 13, marginTop: 8 }}>{pushMsg}</div>}
+
+      <h2 style={{ marginTop: 32 }}>تغيير كلمة المرور</h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <input type="password" style={inputStyle} placeholder="كلمة المرور الحالية" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        <input type="password" style={inputStyle} placeholder="كلمة المرور الجديدة (8 أحرف على الأقل)" value={next} onChange={(e) => setNext(e.target.value)} />
+        {error && <div style={{ color: "red", fontSize: 13 }}>{error}</div>}
+        {msg && <div style={{ color: "#22B573", fontSize: 13 }}>{msg}</div>}
+        <button onClick={submit} disabled={busy} style={btnPrimary}>{busy ? "جارِ الحفظ…" : "حفظ كلمة المرور الجديدة"}</button>
+      </div>
+    </div>
+  );
+}
+
+function AdminDashboard({ onLogout, permissions }) {
+  // permissions === null/undefined means this is the real admin (full access).
+  // permissions === array means this is a staff account, restricted to those tabs.
+  const [, , t] = useLanguage();
+  const isFullAdmin = !permissions;
+  const allTabs = [["categories", t("tabCategories")], ["merchants", t("tabMerchants")], ["delivery", t("tabDelivery")], ["orders", t("tabOrders")], ["cases", t("tabCases")], ["coupons", t("tabCoupons")], ["storesettings", t("tabSettings")], ["reports", t("tabReports")], ["returns", t("tabReturns")], ["broadcast", "الإعلانات"]];
+  const visibleTabs = isFullAdmin ? allTabs : allTabs.filter(([id]) => permissions.includes(id));
+  const tabs = isFullAdmin ? [...visibleTabs, ["staff", t("tabStaff")], ["admins", t("tabAdmins")], ["auditlog", t("tabAuditLog")], ["backup", t("tabBackup")], ["settings", t("tabAccount")]] : [...visibleTabs, ["settings", t("tabAccount")]];
+  const [tab, setTab] = useState(tabs[0] ? tabs[0][0] : "settings");
+  const stats = useDoc("stats", "visits");
+  return (
+    <div style={{ minHeight: "100vh", background: "#F2F1EC" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", background: "#000", color: "#fff" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Logo size={32} dark={true} />
+          {isFullAdmin && <span style={{ fontSize: 12, color: "#aaa", borderRight: "1px solid rgba(255,255,255,.2)", paddingRight: 14 }}>👁️ {t("siteVisits")}: <strong style={{ color: "#fff" }}>{stats ? stats.count : "…"}</strong></span>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <LanguageToggle dark={true} />
+          <DarkModeToggle dark={true} />
+          <NotificationBell dark={true} />
+          <button onClick={onLogout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>{t("logoutFull")}</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, padding: "14px 20px", background: "#fff", overflowX: "auto" }}>
+        {tabs.map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ padding: "9px 18px", borderRadius: 999, border: "1px solid #eee", background: tab === id ? "var(--purple)" : "#F2F1EC", color: tab === id ? "#fff" : "#000", flexShrink: 0 }}>{label}</button>
+        ))}
+      </div>
+      {tab === "categories" && <CategoriesAdmin />}
+      {tab === "merchants" && <MerchantsAdmin />}
+      {tab === "coupons" && <CouponsAdmin />}
+      {tab === "storesettings" && <StoreSettingsAdmin />}
+      {tab === "returns" && <ReturnsAdmin />}
+      {tab === "broadcast" && <BroadcastAdmin />}
+      {tab === "backup" && isFullAdmin && <BackupAdmin />}
+      {tab === "reports" && <AdminReports />}
+      {tab === "cases" && <CasesAdmin />}
+      {tab === "staff" && isFullAdmin && <StaffAdmin />}
+      {tab === "admins" && isFullAdmin && <AdminsAdmin />}
+      {tab === "auditlog" && isFullAdmin && <AuditLogAdmin />}
+      {tab === "settings" && <ChangePasswordPanel />}
+      {tab === "delivery" && <DeliveryAdmin />}
+      {tab === "orders" && <OrdersAdmin />}
+    </div>
+  );
+}
+
+/* ============================= Merchant dashboard ============================= */
+function MerchantProducts() {
+  const { user, profile } = useAuth();
+  const { data: products, loading } = useQuery("products", "merchantId", "==", user ? user.uid : null);
+  const { data: categories } = useCollection("categories", "name");
+  const emptyForm = { name: "", price: "", stock: "", categoryId: "", images: [], description: "", colors: "", sizes: "", flashPrice: "", flashEndsAt: "" };
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  // Images are stored as compressed base64 strings directly in the Firestore
+  // document (not Firebase Storage) since Storage needs the paid Blaze plan,
+  // which isn't enabled on this project. Up to 4 images per product keeps
+  // the document comfortably under Firestore's 1MB document limit.
+  const handleImageFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (form.images.length >= 4) { setError("أقصى شي 4 صور لكل منتج."); return; }
+    setUploading(true); setError("");
+    try {
+      const base64 = await fileToCompressedBase64(file, 700, 0.6);
+      setForm((f) => ({ ...f, images: [...f.images, base64] }));
+    } catch (err) { setError("تعذّرت معالجة الصورة: " + err.message); } finally { setUploading(false); }
+  };
+  const removeImage = (idx) => setForm((f) => ({ ...f, images: f.images.filter((_, i) => i !== idx) }));
+
+  const startEdit = (p) => {
+    setEditingId(p.id);
+    setForm({
+      name: p.name, price: String(p.price), stock: String(p.stock), categoryId: p.categoryId || "", images: p.images || (p.image ? [p.image] : []), description: p.description || "",
+      colors: (p.colors || []).join(", "), sizes: (p.sizes || []).join(", "),
+      flashPrice: p.flashSalePrice ? String(p.flashSalePrice) : "",
+      flashEndsAt: p.flashSaleEndsAt && p.flashSaleEndsAt.toDate ? p.flashSaleEndsAt.toDate().toISOString().slice(0, 16) : "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const cancelEdit = () => { setEditingId(null); setForm(emptyForm); setError(""); };
+
+  const save = async () => {
+    setError(""); if (!form.name.trim() || !form.price) return;
+    const payload = {
+      name: form.name.trim(), price: Number(form.price), currency: (profile && profile.currency) || "SYP",
+      stock: Number(form.stock) || 0, categoryId: form.categoryId, images: form.images, image: form.images[0] || "", description: form.description.trim(),
+      colors: form.colors.split(",").map((s) => s.trim()).filter(Boolean),
+      sizes: form.sizes.split(",").map((s) => s.trim()).filter(Boolean),
+      flashSalePrice: form.flashPrice ? Number(form.flashPrice) : null,
+      flashSaleEndsAt: form.flashEndsAt ? new Date(form.flashEndsAt) : null,
+    };
+    try {
+      if (editingId) {
+        await db.collection("products").doc(editingId).update(payload);
+        setEditingId(null);
+      } else {
+        await db.collection("products").add({
+          ...payload, merchantId: user.uid, merchantName: (profile && profile.name) || "",
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      setForm(emptyForm);
+    } catch (err) { setError("تعذّر الحفظ: " + err.message); }
+  };
+  const remove = async (id) => {
+    if (!window.confirm("متأكد بدك تحذف هالمنتج نهائياً؟")) return;
+    await db.collection("products").doc(id).delete();
+    if (editingId === id) cancelEdit();
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>{editingId ? "تعديل منتج" : "إضافة منتج"}</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 14 }}>
+        <input style={inputStyle} placeholder="اسم المنتج" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input type="number" style={inputStyle} placeholder="السعر" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
+        <input type="number" style={inputStyle} placeholder="الكمية" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} />
+        <select style={inputStyle} value={form.categoryId} onChange={(e) => setForm({ ...form, categoryId: e.target.value })}>
+          <option value="">اختر فئة</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          {form.images.map((img, i) => (
+            <div key={i} style={{ position: "relative" }}>
+              <img src={img} alt="" style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover", border: i === 0 ? "2px solid var(--purple)" : "1px solid #ddd" }} />
+              <button onClick={() => removeImage(i)} style={{ position: "absolute", top: -6, left: -6, background: "#B23A3A", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 11, lineHeight: 1 }}>×</button>
+            </div>
+          ))}
+        </div>
+        {form.images.length < 4 && <input type="file" accept="image/*" onChange={handleImageFile} />}
+        {uploading && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>جارِ معالجة الصورة…</div>}
+        <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>أول صورة هي صورة الغلاف — حتى 4 صور.</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 12 }}>
+        <input style={inputStyle} placeholder="الألوان المتوفرة (مفصولة بفاصلة، اختياري)" value={form.colors} onChange={(e) => setForm({ ...form, colors: e.target.value })} />
+        <input style={inputStyle} placeholder="المقاسات المتوفرة (مفصولة بفاصلة، اختياري)" value={form.sizes} onChange={(e) => setForm({ ...form, sizes: e.target.value })} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px,1fr))", gap: 12, marginBottom: 12 }}>
+        <input type="number" style={inputStyle} placeholder="سعر تخفيض عرض محدود (اختياري)" value={form.flashPrice} onChange={(e) => setForm({ ...form, flashPrice: e.target.value })} />
+        <input type="datetime-local" style={inputStyle} placeholder="ينتهي العرض بتاريخ" value={form.flashEndsAt} onChange={(e) => setForm({ ...form, flashEndsAt: e.target.value })} />
+      </div>
+      <textarea style={{ ...inputStyle, width: "100%", minHeight: 60, marginBottom: 12 }} placeholder="الوصف" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+      <br />
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={save} style={btnPrimary}>{editingId ? "حفظ التعديلات" : "نشر المنتج"}</button>
+        {editingId && <button onClick={cancelEdit} style={btnGhost}>إلغاء التعديل</button>}
+      </div>
+      {error && <div style={{ color: "red", marginTop: 10 }}>{error}</div>}
+      <h2 style={{ marginTop: 32 }}>
+        منتجاتي ({products.length})
+        {products.filter((p) => p.stock <= 5).length > 0 && (
+          <span style={{ marginRight: 10, fontSize: 12, color: "#B58A2A", fontWeight: 400 }}>⚠ {products.filter((p) => p.stock <= 5).length} منتج كميته منخفضة</span>
+        )}
+      </h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px,1fr))", gap: 14 }}>
+          {products.map((p) => (
+            <div key={p.id} className="lift" style={{ background: "#fff", border: editingId === p.id ? "2px solid var(--purple)" : "1px solid #eee", borderRadius: 12, overflow: "hidden", position: "relative" }}>
+              {p.stock <= 5 && <span style={{ position: "absolute", top: 6, right: 6, background: "#B58A2A", color: "#fff", fontSize: 10, padding: "2px 8px", borderRadius: 999, fontWeight: 700 }}>كمية قليلة ({p.stock})</span>}
+              <div style={{ height: 110, background: "#f4f4f4", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.image ? <img src={p.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "#999", fontSize: 12 }}>لا صورة</span>}
+              </div>
+              <div style={{ padding: 10 }}>
+                <div style={{ fontWeight: 700 }}>{p.name}</div>
+                <div style={{ color: "#9B3FE8", fontWeight: 700 }}>{p.price} {p.currency}</div>
+                <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                  <button onClick={() => startEdit(p)} style={{ border: "none", background: "transparent", color: "var(--purple)", fontSize: 13, padding: 0, fontWeight: 700 }}>تعديل</button>
+                  <button onClick={() => remove(p.id)} style={{ border: "none", background: "transparent", color: "red", fontSize: 13, padding: 0 }}>حذف</button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {products.length === 0 && <div style={{ color: "#888" }}>لا يوجد منتجات بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MerchantOrders() {
+  const { user } = useAuth();
+  const { data: orders, loading } = useQuery("orders", "merchantIds", "array-contains", user ? user.uid : null);
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>طلبات فيها منتجاتي</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[...orders].reverse().map((o) => (
+            <div key={o.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <strong>طلب #{o.id.slice(-5)}</strong>
+                <StatusTag status={o.status} />
+              </div>
+              {o.items.filter((it) => it.merchantId === user.uid).map((it, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+                  <span>{it.name} × {it.qty}</span><span>{it.price * it.qty} {it.currency}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {orders.length === 0 && <div style={{ color: "#888" }}>لا يوجد طلبات بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MerchantReports() {
+  const { user } = useAuth();
+  const { data: orders, loading } = useQuery("orders", "merchantIds", "array-contains", user ? user.uid : null);
+  const delivered = orders.filter((o) => o.status === "delivered");
+  const myItemsOf = (o) => o.items.filter((it) => it.merchantId === user.uid);
+  const revenue = delivered.reduce((s, o) => s + myItemsOf(o).reduce((s2, it) => s2 + it.price * it.qty, 0), 0);
+  const productTotals = {};
+  delivered.forEach((o) => myItemsOf(o).forEach((it) => { productTotals[it.name] = (productTotals[it.name] || 0) + it.qty; }));
+  const topProducts = Object.entries(productTotals).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxQty = topProducts.length ? topProducts[0][1] : 1;
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>تقرير المبيعات</h2>
+      {loading ? <Loading /> : (
+        <React.Fragment>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 16, minWidth: 140 }}>
+              <div style={{ color: "#888", fontSize: 12 }}>إجمالي المبيعات المسلّمة</div>
+              <div style={{ fontWeight: 800, fontSize: 22, color: "#9B3FE8" }}>{revenue}</div>
+            </div>
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 16, minWidth: 140 }}>
+              <div style={{ color: "#888", fontSize: 12 }}>عدد الطلبات المسلّمة</div>
+              <div style={{ fontWeight: 800, fontSize: 22 }}>{delivered.length}</div>
+            </div>
+          </div>
+          <h3>الأكثر مبيعاً</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {topProducts.map(([name, qty]) => (
+              <div key={name}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 3 }}><span>{name}</span><span>{qty}</span></div>
+                <div style={{ background: "#eee", borderRadius: 999, height: 8 }}>
+                  <div style={{ width: (qty / maxQty * 100) + "%", background: "var(--purple)", height: 8, borderRadius: 999 }}></div>
+                </div>
+              </div>
+            ))}
+            {topProducts.length === 0 && <div style={{ color: "#888" }}>لا يوجد مبيعات مسلّمة بعد.</div>}
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function MerchantReviews() {
+  const { user } = useAuth();
+  const { data: products } = useQuery("products", "merchantId", "==", user ? user.uid : null);
+  const [reviewsByProduct, setReviewsByProduct] = useState({});
+  const [replyDrafts, setReplyDrafts] = useState({});
+
+  useEffect(() => {
+    const unsubs = products.map((p) =>
+      db.collection("products").doc(p.id).collection("reviews").onSnapshot((snap) => {
+        setReviewsByProduct((prev) => ({ ...prev, [p.id]: snap.docs.map((d) => ({ id: d.id, ...d.data() })) }));
+      })
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [products.map((p) => p.id).join(",")]);
+
+  const sendReply = async (productId, reviewId) => {
+    const text = (replyDrafts[reviewId] || "").trim();
+    if (!text) return;
+    await db.collection("products").doc(productId).collection("reviews").doc(reviewId).update({ merchantReply: text });
+    setReplyDrafts((d) => ({ ...d, [reviewId]: "" }));
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>مراجعات زبائني</h2>
+      {products.map((p) => {
+        const reviews = reviewsByProduct[p.id] || [];
+        if (reviews.length === 0) return null;
+        return (
+          <div key={p.id} style={{ marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 8 }}>{p.name}</h3>
+            {reviews.map((r) => (
+              <div key={r.id} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 12, marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <strong style={{ fontSize: 13 }}>{r.customerName}</strong>
+                  <StarRating value={r.rating} size={13} />
+                </div>
+                {r.comment && <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>{r.comment}</div>}
+                {r.merchantReply ? (
+                  <div style={{ background: "#F0EEE8", borderRadius: 8, padding: 8, marginTop: 6, fontSize: 12 }}><strong>ردك: </strong>{r.merchantReply}</div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <input style={{ ...inputStyle, flex: 1 }} placeholder="اكتب رد…" value={replyDrafts[r.id] || ""} onChange={(e) => setReplyDrafts((d) => ({ ...d, [r.id]: e.target.value }))} />
+                    <button onClick={() => sendReply(p.id, r.id)} style={btnGhost}>رد</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      {products.every((p) => (reviewsByProduct[p.id] || []).length === 0) && <div style={{ color: "#888" }}>ما في مراجعات على منتجاتك بعد.</div>}
+    </div>
+  );
+}
+
+function MerchantStoreProfile() {
+  const { user, profile, refreshProfile } = useAuth();
+  const [description, setDescription] = useState((profile && profile.storeDescription) || "");
+  const [busyBanner, setBusyBanner] = useState(false);
+  const [busyLogo, setBusyLogo] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const uploadBanner = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setBusyBanner(true);
+    try {
+      const base64 = await fileToCompressedBase64(file, 900, 0.6);
+      await db.collection("users").doc(user.uid).update({ bannerImage: base64 });
+      refreshProfile();
+    } finally { setBusyBanner(false); }
+  };
+  const uploadLogo = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setBusyLogo(true);
+    try {
+      const base64 = await fileToCompressedBase64(file, 300, 0.7);
+      await db.collection("users").doc(user.uid).update({ logoImage: base64 });
+      refreshProfile();
+    } finally { setBusyLogo(false); }
+  };
+  const saveDescription = async () => {
+    await db.collection("users").doc(user.uid).update({ storeDescription: description.trim() });
+    refreshProfile();
+    setMsg("تم الحفظ."); setTimeout(() => setMsg(""), 2000);
+  };
+
+  return (
+    <div style={{ padding: 20, maxWidth: 480 }}>
+      <h2>واجهة متجري</h2>
+      <p style={{ color: "#888", fontSize: 13 }}>هاي الصور والوصف بتظهر لما الزبون يفتح صفحة متجرك الخاصة من المتجر العام.</p>
+
+      <h3>بانر المتجر</h3>
+      {profile && profile.bannerImage && <img src={profile.bannerImage} alt="" style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 12, marginBottom: 8 }} />}
+      <input type="file" accept="image/*" onChange={uploadBanner} />
+      {busyBanner && <div style={{ fontSize: 12, color: "#888" }}>جارِ الرفع…</div>}
+
+      <h3 style={{ marginTop: 20 }}>شعار المتجر</h3>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        {profile && profile.logoImage && <img src={profile.logoImage} alt="" style={{ width: 60, height: 60, borderRadius: "50%", objectFit: "cover", border: "1px solid #ddd" }} />}
+        <div>
+          <input type="file" accept="image/*" onChange={uploadLogo} />
+          {busyLogo && <div style={{ fontSize: 12, color: "#888" }}>جارِ الرفع…</div>}
+        </div>
+      </div>
+
+      <h3 style={{ marginTop: 20 }}>وصف قصير عن المتجر</h3>
+      <textarea style={{ ...inputStyle, width: "100%", minHeight: 60 }} placeholder="مثال: أفضل الملابس الرجالية بأسعار منافسة" value={description} onChange={(e) => setDescription(e.target.value)} />
+      <button onClick={saveDescription} style={{ ...btnPrimary, marginTop: 8 }}>حفظ الوصف</button>
+      {msg && <div style={{ color: "#22B573", marginTop: 8 }}>{msg}</div>}
+    </div>
+  );
+}
+
+function MerchantDashboard() {
+  const { profile, logout } = useAuth();
+  const [, , t] = useLanguage();
+  const [tab, setTab] = useState("products");
+  if (profile && profile.status === "suspended") {
+    return (
+      <FullscreenMessage title="حسابك موقوف حالياً" subtitle="تواصل مع الإدارة لمزيد من التفاصيل.">
+        <button onClick={logout} style={btnPrimary}>{t("logoutFull")}</button>
+      </FullscreenMessage>
+    );
+  }
+  return (
+    <div style={{ minHeight: "100vh", background: "#F2F1EC" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", background: "#000", color: "#fff" }}>
+        <div style={{ fontWeight: 800 }}>{profile && profile.name} — واجهة التاجر</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <LanguageToggle dark={true} />
+          <DarkModeToggle dark={true} />
+          <NotificationBell dark={true} />
+          <button onClick={logout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>{t("logoutFull")}</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 10, padding: "14px 20px", background: "#fff", overflowX: "auto" }}>
+        {[["products", t("merchantProducts")], ["orders", t("merchantOrders")], ["reports", t("merchantReports")], ["reviews", t("merchantReviews")], ["storeprofile", t("merchantStoreProfile")], ["cases", t("merchantSupport")], ["settings", t("tabAccount")]].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ padding: "9px 18px", borderRadius: 999, border: "1px solid #eee", background: tab === id ? "var(--purple)" : "#F2F1EC", color: tab === id ? "#fff" : "#000", flexShrink: 0 }}>{label}</button>
+        ))}
+      </div>
+      {tab === "products" && <MerchantProducts />}
+      {tab === "orders" && <MerchantOrders />}
+      {tab === "reports" && <MerchantReports />}
+      {tab === "reviews" && <MerchantReviews />}
+      {tab === "storeprofile" && <MerchantStoreProfile />}
+      {tab === "cases" && <MyCases />}
+      {tab === "settings" && <ChangePasswordPanel />}
+    </div>
+  );
+}
+
+/* ============================= Reviews & ratings ============================= */
+function StarRating({ value, size, onRate }) {
+  size = size || 16;
+  const stars = [1, 2, 3, 4, 5];
+  return (
+    <span style={{ display: "inline-flex", gap: 2, cursor: onRate ? "pointer" : "default" }}>
+      {stars.map((n) => (
+        <span key={n} onClick={() => onRate && onRate(n)} style={{ color: n <= Math.round(value || 0) ? "#F5A623" : "#ddd", fontSize: size }}>★</span>
+      ))}
+    </span>
+  );
+}
+
+function ReviewsSection({ productId }) {
+  const { user, profile } = useAuth();
+  const [reviews, setReviews] = useState([]);
+  const [myRating, setMyRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const unsub = db.collection("products").doc(productId).collection("reviews").orderBy("createdAt", "desc").onSnapshot(
+      (snap) => setReviews(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {}
+    );
+    return unsub;
+  }, [productId]);
+
+  const submit = async () => {
+    if (!myRating || !user) return;
+    setBusy(true);
+    try {
+      await db.collection("products").doc(productId).collection("reviews").doc(user.uid).set({
+        rating: myRating, comment: comment.trim(), customerName: (profile && profile.name) || "",
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      // Recompute the product's average rating so the storefront can show it without reading all reviews.
+      const allSnap = await db.collection("products").doc(productId).collection("reviews").get();
+      const all = allSnap.docs.map((d) => d.data());
+      const avg = all.reduce((s, r) => s + r.rating, 0) / all.length;
+      await db.collection("products").doc(productId).update({ avgRating: avg, reviewCount: all.length });
+      setComment("");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ marginTop: 16, borderTop: "1px solid #eee", paddingTop: 14 }}>
+      <h3 style={{ margin: "0 0 10px" }}>التقييمات ({reviews.length})</h3>
+      {user && profile && profile.role === "customer" && (
+        <div style={{ marginBottom: 14 }}>
+          <StarRating value={myRating} size={22} onRate={setMyRating} />
+          <textarea style={{ ...inputStyle, width: "100%", minHeight: 50, marginTop: 8 }} placeholder="تعليقك (اختياري)" value={comment} onChange={(e) => setComment(e.target.value)} />
+          <button onClick={submit} disabled={busy || !myRating} style={{ ...btnPrimary, marginTop: 6 }}>{busy ? "جارِ الحفظ…" : "إرسال تقييمك"}</button>
+        </div>
+      )}
+      {reviews.map((r) => (
+        <div key={r.id} style={{ borderTop: "1px dashed #eee", paddingTop: 8, marginTop: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <strong style={{ fontSize: 13 }}>{r.customerName}</strong>
+            <StarRating value={r.rating} size={13} />
+          </div>
+          {r.comment && <div style={{ fontSize: 13, color: "#666", marginTop: 4 }}>{r.comment}</div>}
+          {r.merchantReply && (
+            <div style={{ background: "#F0EEE8", borderRadius: 8, padding: 8, marginTop: 6, fontSize: 12 }}>
+              <strong>رد التاجر: </strong>{r.merchantReply}
+            </div>
+          )}
+        </div>
+      ))}
+      {reviews.length === 0 && <div style={{ color: "#888", fontSize: 13 }}>لا يوجد تقييمات بعد.</div>}
+    </div>
+  );
+}
+
+function ProductReviewPrompt({ order }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button onClick={() => setOpen((o) => !o)} style={{ ...btnGhost, fontSize: 12, padding: "6px 12px" }}>{open ? "إخفاء التقييم" : "⭐ قيّم منتجات هالطلب"}</button>
+      {open && order.items.map((it, i) => (
+        <div key={i} style={{ marginTop: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{it.name}</div>
+          <ReviewsSection productId={it.productId} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProductDetailModal({ product, onClose, onAdd }) {
+  const rate = useExchangeRate();
+  const gallery = (product.images && product.images.length) ? product.images : (product.image ? [product.image] : []);
+  const [activeImg, setActiveImg] = useState(0);
+  const [color, setColor] = useState((product.colors && product.colors[0]) || "");
+  const [size, setSize] = useState((product.sizes && product.sizes[0]) || "");
+  const [variantError, setVariantError] = useState("");
+  const effectivePrice = getEffectivePrice(product);
+  const addToCart = () => {
+    if ((product.colors && product.colors.length && !color) || (product.sizes && product.sizes.length && !size)) {
+      setVariantError("اختار اللون/المقاس الأول."); return;
+    }
+    const variantLabel = [color, size].filter(Boolean).join(" / ");
+    onAdd({ ...product, price: effectivePrice, variant: variantLabel || null });
+    onClose();
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999, padding: 16 }} onClick={onClose}>
+      <div className="fade-in" style={{ background: "#fff", borderRadius: 18, padding: 22, maxWidth: 420, width: "100%", maxHeight: "85vh", overflow: "auto" }} onClick={(e) => e.stopPropagation()}>
+        {gallery.length > 0 && (
+          <React.Fragment>
+            <img src={gallery[activeImg]} alt="" style={{ width: "100%", height: 200, objectFit: "cover", borderRadius: 12, marginBottom: 8 }} />
+            {gallery.length > 1 && (
+              <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                {gallery.map((img, i) => (
+                  <img key={i} src={img} alt="" onClick={() => setActiveImg(i)} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, cursor: "pointer", border: i === activeImg ? "2px solid var(--purple)" : "1px solid #ddd" }} />
+                ))}
+              </div>
+            )}
+          </React.Fragment>
+        )}
+        <h2 style={{ margin: "0 0 4px" }}>{product.name}</h2>
+        <div style={{ color: "#888", fontSize: 13 }}>{product.merchantName}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0" }}>
+          <StarRating value={product.avgRating || 0} />
+          <span style={{ fontSize: 12, color: "#888" }}>({product.reviewCount || 0})</span>
+        </div>
+        {isFlashSaleActive(product) ? (
+          <div>
+            <span style={{ color: "#9B3FE8", fontWeight: 700, fontSize: 18 }}>{product.flashSalePrice} {product.currency}</span>
+            <span style={{ color: "#aaa", fontSize: 14, textDecoration: "line-through", marginRight: 8 }}>{product.price}</span>
+            <div><FlashCountdown endsAt={product.flashSaleEndsAt.toDate()} /></div>
+          </div>
+        ) : (
+          <div style={{ color: "#9B3FE8", fontWeight: 700, fontSize: 18 }}>{product.price} {product.currency}</div>
+        )}
+        {rate && altPriceLabel(effectivePrice, product.currency, rate) && <div style={{ color: "#888", fontSize: 13 }}>≈ {altPriceLabel(effectivePrice, product.currency, rate)}</div>}
+        {product.colors && product.colors.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>اللون:</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {product.colors.map((c) => <button key={c} onClick={() => setColor(c)} style={{ padding: "5px 12px", borderRadius: 999, border: c === color ? "2px solid var(--purple)" : "1px solid #ddd", background: c === color ? "#F5EEFC" : "#fff" }}>{c}</button>)}
+            </div>
+          </div>
+        )}
+        {product.sizes && product.sizes.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>المقاس:</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {product.sizes.map((s) => <button key={s} onClick={() => setSize(s)} style={{ padding: "5px 12px", borderRadius: 999, border: s === size ? "2px solid var(--purple)" : "1px solid #ddd", background: s === size ? "#F5EEFC" : "#fff" }}>{s}</button>)}
+            </div>
+          </div>
+        )}
+        {variantError && <div style={{ color: "red", fontSize: 12, marginTop: 6 }}>{variantError}</div>}
+        {product.description && <p style={{ color: "#333", lineHeight: 1.7, marginTop: 10 }}>{product.description}</p>}
+        <button onClick={addToCart} style={{ width: "100%", ...btnPrimary, marginTop: 10 }}>أضف للسلة</button>
+        <ReviewsSection productId={product.id} />
+        <button onClick={onClose} style={{ ...btnGhost, marginTop: 14 }}>إغلاق</button>
+      </div>
+    </div>
+  );
+}
+
+function isFlashSaleActive(p) {
+  return !!(p.flashSalePrice && p.flashSaleEndsAt && p.flashSaleEndsAt.toDate && p.flashSaleEndsAt.toDate() > new Date());
+}
+function getEffectivePrice(p) {
+  return isFlashSaleActive(p) ? p.flashSalePrice : p.price;
+}
+function FlashCountdown({ endsAt }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const diff = Math.max(0, endsAt.getTime() - now);
+  const h = Math.floor(diff / 3600000), m = Math.floor((diff % 3600000) / 60000), s = Math.floor((diff % 60000) / 1000);
+  if (diff <= 0) return null;
+  return <span style={{ color: "#B23A3A", fontWeight: 700, fontSize: 11 }}>⏰ {String(h).padStart(2, "0")}:{String(m).padStart(2, "0")}:{String(s).padStart(2, "0")}</span>;
+}
+
+/* ============================= Customer app ============================= */
+function Storefront({ onAdd, onSelectMerchant, merchantId }) {
+  const { profile, user, refreshProfile } = useAuth();
+  const [, , t] = useLanguage();
+  const { data: allProducts, loading } = useCollection("products");
+  const { data: categories } = useCollection("categories", "name");
+  const rate = useExchangeRate();
+  const [categoryId, setCategoryId] = useState("all");
+  const [search, setSearch] = useState("");
+  const [detailProduct, setDetailProduct] = useState(null);
+  const products = merchantId ? allProducts.filter((p) => p.merchantId === merchantId) : allProducts;
+  let filtered = categoryId === "all" ? products : products.filter((p) => p.categoryId === categoryId);
+  if (search.trim()) {
+    const q = search.trim().toLowerCase();
+    filtered = filtered.filter((p) => (p.name || "").toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q));
+  }
+  const wishlist = (profile && profile.wishlist) || [];
+  const toggleWishlist = (e, productId) => {
+    e.stopPropagation();
+    if (!user) return;
+    const op = wishlist.includes(productId) ? firebase.firestore.FieldValue.arrayRemove(productId) : firebase.firestore.FieldValue.arrayUnion(productId);
+    db.collection("users").doc(user.uid).update({ wishlist: op }).then(refreshProfile);
+  };
+  const navBtn = (active) => ({ padding: "8px 16px", borderRadius: 999, border: "1px solid #eee", background: active ? "#000" : "#fff", color: active ? "#fff" : "#000", flexShrink: 0 });
+  return (
+    <div style={{ padding: 20 }}>
+      <input
+        style={{ ...inputStyle, width: "100%", marginBottom: 14 }}
+        placeholder={t("search")}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", marginBottom: 16 }}>
+        <button onClick={() => setCategoryId("all")} style={navBtn(categoryId === "all")}>{t("all")}</button>
+        {categories.map((c) => <button key={c.id} onClick={() => setCategoryId(c.id)} style={navBtn(categoryId === c.id)}>{c.name}</button>)}
+      </div>
+      {loading ? <Loading /> : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px,1fr))", gap: 14 }}>
+          {filtered.map((p) => (
+            <div key={p.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, overflow: "hidden", cursor: "pointer", position: "relative" }} onClick={() => setDetailProduct(p)}>
+              <button onClick={(e) => toggleWishlist(e, p.id)} style={{ position: "absolute", top: 6, left: 6, background: "rgba(255,255,255,.9)", border: "none", borderRadius: 999, width: 28, height: 28, fontSize: 14, zIndex: 2 }}>{wishlist.includes(p.id) ? "❤️" : "🤍"}</button>
+              {isFlashSaleActive(p) && <span style={{ position: "absolute", top: 6, right: 6, background: "#B23A3A", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "2px 8px", zIndex: 2 }}>عرض محدود</span>}
+              <div style={{ height: 110, background: "#f4f4f4", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.image ? <img src={p.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "#999", fontSize: 12 }}>لا صورة</span>}
+              </div>
+              <div style={{ padding: 10 }}>
+                <div style={{ fontWeight: 700 }}>{p.name}</div>
+                <div style={{ color: "#888", fontSize: 12, textDecoration: onSelectMerchant ? "underline" : "none" }} onClick={(e) => { if (onSelectMerchant) { e.stopPropagation(); onSelectMerchant(p.merchantId, p.merchantName); } }}>{p.merchantName}</div>
+                {p.reviewCount > 0 && <div style={{ display: "flex", alignItems: "center", gap: 4 }}><StarRating value={p.avgRating} size={11} /><span style={{ fontSize: 11, color: "#888" }}>({p.reviewCount})</span></div>}
+                {isFlashSaleActive(p) ? (
+                  <div>
+                    <span style={{ color: "#9B3FE8", fontWeight: 700 }}>{p.flashSalePrice} {p.currency}</span>
+                    <span style={{ color: "#aaa", fontSize: 12, textDecoration: "line-through", marginRight: 6 }}>{p.price}</span>
+                    <div><FlashCountdown endsAt={p.flashSaleEndsAt.toDate()} /></div>
+                  </div>
+                ) : (
+                  <div style={{ color: "#9B3FE8", fontWeight: 700 }}>{p.price} {p.currency}</div>
+                )}
+                {rate && altPriceLabel(getEffectivePrice(p), p.currency, rate) && <div style={{ color: "#aaa", fontSize: 11 }}>≈ {altPriceLabel(getEffectivePrice(p), p.currency, rate)}</div>}
+                <button onClick={(e) => { e.stopPropagation(); if ((p.colors && p.colors.length) || (p.sizes && p.sizes.length)) { setDetailProduct(p); } else { onAdd({ ...p, price: getEffectivePrice(p) }); } }} style={{ marginTop: 6, width: "100%", ...btnPrimary, padding: 8 }}>{t("addToCart")}</button>
+              </div>
+            </div>
+          ))}
+          {filtered.length === 0 && <div style={{ color: "#888" }}>{search.trim() ? "ما في نتائج مطابقة." : t("noProducts")}</div>}
+        </div>
+      )}
+      {detailProduct && <ProductDetailModal product={detailProduct} onClose={() => setDetailProduct(null)} onAdd={onAdd} />}
+    </div>
+  );
+}
+
+function CartView({ cart, onUpdateQty, onPlaced, onBack }) {
+  const { user, profile, refreshProfile } = useAuth();
+  const [, , t] = useLanguage();
+  const rate = useExchangeRate();
+  const payment = useAdminSettings("payment");
+  const whatsapp = useAdminSettings("whatsapp");
+  const loyalty = useAdminSettings("loyalty");
+  const deliverySettings = useAdminSettings("delivery");
+  const savedAddresses = (profile && profile.addresses) || [];
+  const myPoints = (profile && profile.points) || 0;
+  const [address, setAddress] = useState("");
+  const [saveAddress, setSaveAddress] = useState(false);
+  const [paymentNote, setPaymentNote] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("shamcash");
+  const [proofImage, setProofImage] = useState("");
+  const [proofUploading, setProofUploading] = useState(false);
+  const [usePoints, setUsePoints] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [coupon, setCoupon] = useState(null);
+  const [couponMsg, setCouponMsg] = useState("");
+  const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
+  const couponDiscount = coupon ? (coupon.type === "percent" ? Math.round(subtotal * coupon.value / 100) : Math.min(coupon.value, subtotal)) : 0;
+  const pointValue = (loyalty && loyalty.pointValue) || 0;
+  const pointsDiscount = usePoints && pointValue ? Math.min(Math.floor(myPoints / 100) * pointValue, subtotal - couponDiscount) : 0;
+  const discount = couponDiscount + pointsDiscount;
+  const afterDiscount = subtotal - discount;
+  const deliveryFee = deliverySettings && deliverySettings.fee
+    ? (deliverySettings.freeThreshold && afterDiscount >= deliverySettings.freeThreshold ? 0 : deliverySettings.fee)
+    : 0;
+  const total = afterDiscount + deliveryFee;
+
+  const applyCoupon = async () => {
+    setCouponMsg(""); setCoupon(null);
+    if (!couponCode.trim()) return;
+    try {
+      const snap = await db.collection("coupons").doc(couponCode.trim().toUpperCase()).get();
+      if (!snap.exists || !snap.data().active) { setCouponMsg("الكود غير صالح."); return; }
+      setCoupon(snap.data());
+      setCouponMsg("تم تطبيق الخصم ✓");
+    } catch (err) { setCouponMsg("تعذّر التحقق من الكود."); }
+  };
+
+  const uploadProof = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    setProofUploading(true);
+    try { setProofImage(await fileToCompressedBase64(file, 700, 0.6)); }
+    catch (err) { setError("تعذّرت معالجة الصورة."); }
+    finally { setProofUploading(false); }
+  };
+
+  const place = async () => {
+    setError("");
+    if (cart.length === 0) { setError("السلة فارغة."); return; }
+    if (!address.trim()) { setError("عبّي عنوان التوصيل."); return; }
+    if (paymentMethod === "shamcash" && !proofImage) { setError("ارفق صورة إثبات تحويل شام كاش."); return; }
+    setBusy(true);
+    try {
+      const merchantIds = [...new Set(cart.map((c) => c.merchantId))];
+      const pointsUsed = usePoints && pointsDiscount > 0 ? Math.floor(pointsDiscount / pointValue) * 100 : 0;
+      const orderRef = await db.collection("orders").add({
+        customerId: user.uid, customerName: (profile && profile.name) || "", customerPhone: (profile && profile.phone) || "",
+        items: cart, merchantIds, subtotal, discount, couponCode: coupon ? coupon.code : null, pointsUsed, deliveryFee, total,
+        address: address.trim(), paymentNote: paymentNote.trim(), paymentMethod, paymentProofImage: paymentMethod === "shamcash" ? proofImage : "",
+        status: "awaiting_payment_review", deliveryRepId: null,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      merchantIds.forEach((mid) => notifyUser(mid, "طلب جديد", "وصلك طلب جديد فيه منتجاتك."));
+      if (pointsUsed > 0) {
+        await db.collection("users").doc(user.uid).update({ points: firebase.firestore.FieldValue.increment(-pointsUsed) });
+        refreshProfile();
+      }
+      if (saveAddress && address.trim() && !savedAddresses.includes(address.trim())) {
+        await db.collection("users").doc(user.uid).update({ addresses: firebase.firestore.FieldValue.arrayUnion(address.trim()) });
+        refreshProfile();
+      }
+      // Opens WhatsApp with a pre-filled order confirmation message to the
+      // platform's WhatsApp number (set by the admin in settings).
+      if (whatsapp && whatsapp.number) {
+        const lines = cart.map((c) => "- " + c.name + " × " + c.qty).join("\n");
+        const msg = "تأكيد طلب جديد #" + orderRef.id.slice(-5) + "\nالاسم: " + ((profile && profile.name) || "") + "\n" + lines + "\nالإجمالي: " + total + "\nالعنوان: " + address.trim();
+        window.open("https://wa.me/" + whatsapp.number.replace(/[^0-9]/g, "") + "?text=" + encodeURIComponent(msg), "_blank");
+      }
+      onPlaced();
+    } catch (err) { setError("تعذّر إرسال الطلب: " + err.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>{t("cart")}</h2>
+      {cart.map((c) => (
+        <div key={c.cartKey} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #eee", borderRadius: 10, padding: 12, marginBottom: 8 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>{c.name}{c.variant && <span style={{ color: "#888", fontWeight: 400, fontSize: 12 }}> ({c.variant})</span>}</div>
+            <div style={{ color: "#888", fontSize: 13 }}>{c.price} {c.currency}{rate && altPriceLabel(c.price, c.currency, rate) && <span> (≈ {altPriceLabel(c.price, c.currency, rate)})</span>}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={() => onUpdateQty(c.cartKey, c.qty - 1)}>−</button>
+            <span>{c.qty}</span>
+            <button onClick={() => onUpdateQty(c.cartKey, c.qty + 1)}>+</button>
+          </div>
+        </div>
+      ))}
+      {cart.length === 0 && <div style={{ color: "#888" }}>{t("cartEmpty")}</div>}
+      {cart.length > 0 && (
+        <React.Fragment>
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <input style={{ ...inputStyle, flex: 1 }} placeholder="كود خصم (اختياري)" value={couponCode} onChange={(e) => setCouponCode(e.target.value)} />
+            <button onClick={applyCoupon} style={btnGhost}>تطبيق</button>
+          </div>
+          {couponMsg && <div style={{ fontSize: 13, color: coupon ? "#22B573" : "#B23A3A", marginTop: 4 }}>{couponMsg}</div>}
+
+          {myPoints >= 100 && pointValue > 0 && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginTop: 10, background: "#F0EEE8", borderRadius: 8, padding: 8 }}>
+              <input type="checkbox" checked={usePoints} onChange={(e) => setUsePoints(e.target.checked)} />
+              استخدم نقاطي ({myPoints} نقطة) — بتوفّر خصم إضافي
+            </label>
+          )}
+
+          <div style={{ marginTop: 10 }}>
+            {discount > 0 && <div style={{ display: "flex", justifyContent: "space-between", color: "#888", fontSize: 13 }}><span>المجموع الفرعي</span><span>{subtotal}</span></div>}
+            {discount > 0 && <div style={{ display: "flex", justifyContent: "space-between", color: "#22B573", fontSize: 13 }}><span>الخصم</span><span>-{discount}</span></div>}
+            {deliveryFee > 0 && <div style={{ display: "flex", justifyContent: "space-between", color: "#888", fontSize: 13 }}><span>رسم التوصيل</span><span>{deliveryFee}</span></div>}
+            {deliverySettings && deliverySettings.fee > 0 && deliveryFee === 0 && <div style={{ display: "flex", justifyContent: "space-between", color: "#22B573", fontSize: 13 }}><span>التوصيل</span><span>مجاني 🎉</span></div>}
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginBottom: 16 }}>
+              <span>{t("total")}</span><span>{total}</span>
+            </div>
+          </div>
+
+          <h3 style={{ marginBottom: 8 }}>طريقة الدفع</h3>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <button onClick={() => setPaymentMethod("shamcash")} style={{ flex: 1, padding: 10, borderRadius: 10, border: paymentMethod === "shamcash" ? "2px solid var(--purple)" : "1px solid #eee", background: paymentMethod === "shamcash" ? "#F5EEFC" : "#fff" }}>شام كاش</button>
+            {payment && payment.cashOnDelivery && (
+              <button onClick={() => setPaymentMethod("cash")} style={{ flex: 1, padding: 10, borderRadius: 10, border: paymentMethod === "cash" ? "2px solid var(--purple)" : "1px solid #eee", background: paymentMethod === "cash" ? "#F5EEFC" : "#fff" }}>نقدي عند الاستلام</button>
+            )}
+          </div>
+          {paymentMethod === "shamcash" && (
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14, marginBottom: 10 }}>
+              {payment && payment.shamCashQrImage ? (
+                <div style={{ textAlign: "center" }}>
+                  <img src={payment.shamCashQrImage} alt="QR شام كاش" style={{ width: 160, height: 160, objectFit: "contain" }} />
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>حوّل المبلغ عبر شام كاش بمسح الكود، وبعدين ارفق صورة إثبات التحويل تحت.</div>
+                </div>
+              ) : <div style={{ color: "#888", fontSize: 13 }}>ما رفع الأدمن صورة QR بعد.</div>}
+              <div style={{ marginTop: 10 }}>
+                <input type="file" accept="image/*" onChange={uploadProof} />
+                {proofUploading && <div style={{ fontSize: 12, color: "#888" }}>جارِ المعالجة…</div>}
+                {proofImage && <img src={proofImage} alt="" style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 8, marginTop: 6 }} />}
+              </div>
+            </div>
+          )}
+          {paymentMethod === "cash" && <div style={{ fontSize: 13, color: "#888", marginBottom: 10 }}>💵 رح تحاسب المندوب نقداً وقت التسليم.</div>}
+
+          {savedAddresses.length > 0 && (
+            <select style={{ ...inputStyle, width: "100%", marginBottom: 8 }} value="" onChange={(e) => setAddress(e.target.value)}>
+              <option value="">اختر عنوان محفوظ…</option>
+              {savedAddresses.map((a, i) => <option key={i} value={a}>{a}</option>)}
+            </select>
+          )}
+          <input style={{ ...inputStyle, width: "100%" }} placeholder={t("deliveryAddress")} value={address} onChange={(e) => setAddress(e.target.value)} />
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#888", marginTop: 6 }}>
+            <input type="checkbox" checked={saveAddress} onChange={(e) => setSaveAddress(e.target.checked)} /> احفظ هالعنوان لطلبات لاحقة
+          </label>
+          <input style={{ ...inputStyle, width: "100%", marginTop: 8 }} placeholder="ملاحظة إضافية (اختياري)" value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} />
+          {error && <div style={{ color: "red", marginTop: 8 }}>{error}</div>}
+          <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+            <button onClick={onBack} style={btnGhost}>{t("back")}</button>
+            <button onClick={place} disabled={busy} style={btnPrimary}>{busy ? "جارِ الإرسال…" : t("confirmOrder")}</button>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function ReturnRequestButton({ order }) {
+  const { user, profile } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [itemName, setItemName] = useState(order.items[0] ? order.items[0].name : "");
+  const [reason, setReason] = useState("");
+  const [sent, setSent] = useState(false);
+  const [existing, setExisting] = useState(null);
+  useEffect(() => {
+    if (!user) return;
+    // The query must filter on customerId too (not just orderId) so it
+    // matches the Firestore security rule shape, or Firestore rejects the
+    // whole query as "insufficient permissions" even though this one
+    // customer's own return would have been allowed.
+    db.collection("returns").where("orderId", "==", order.id).where("customerId", "==", user.uid).limit(1).get().then((snap) => {
+      if (!snap.empty) setExisting({ id: snap.docs[0].id, ...snap.docs[0].data() });
+    }).catch(() => {});
+  }, [order.id, user]);
+  const submit = async () => {
+    await db.collection("returns").add({
+      orderId: order.id, customerId: user.uid, customerName: (profile && profile.name) || "",
+      itemName, reason: reason.trim(), status: "pending",
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    setSent(true); setOpen(false);
+  };
+  if (existing) {
+    const map = { pending: ["قيد المراجعة", "#B58A2A"], approved: ["مقبول", "#1F7A4C"], rejected: ["مرفوض", "#B23A3A"] };
+    return <div style={{ marginTop: 8, fontSize: 12, color: (map[existing.status] || ["", "#888"])[1] }}>طلب إرجاع/استبدال: {(map[existing.status] || [existing.status])[0]}</div>;
+  }
+  if (sent) return <div style={{ marginTop: 8, fontSize: 12, color: "#22B573" }}>تم إرسال طلب الإرجاع، بيتراجع قريباً.</div>;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <button onClick={() => setOpen((o) => !o)} style={{ ...btnGhost, fontSize: 12, padding: "6px 12px" }}>{open ? "إلغاء" : "↩️ طلب إرجاع/استبدال"}</button>
+      {open && (
+        <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
+          <select style={inputStyle} value={itemName} onChange={(e) => setItemName(e.target.value)}>
+            {order.items.map((it, i) => <option key={i} value={it.name}>{it.name}</option>)}
+          </select>
+          <textarea style={{ ...inputStyle, minHeight: 50 }} placeholder="سبب الإرجاع/الاستبدال" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <button onClick={submit} style={btnPrimary}>إرسال الطلب</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+async function downloadInvoicePdf(order) {
+  try {
+    await loadScriptOnce("https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js");
+  } catch (e) {
+    alert("تعذّر تحميل مكتبة إنشاء PDF (تحقق من اتصال الإنترنت).");
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.text("We-in - Invoice #" + order.id.slice(-5), 14, 18);
+  doc.setFontSize(11);
+  doc.text("Customer: " + (order.customerName || ""), 14, 30);
+  doc.text("Address: " + (order.address || ""), 14, 37);
+  doc.text("Payment: " + (order.paymentMethod === "shamcash" ? "Sham Cash" : order.paymentMethod === "cash" ? "Cash on delivery" : "-"), 14, 44);
+  let y = 56;
+  doc.text("Items:", 14, y); y += 7;
+  order.items.forEach((it) => {
+    doc.text(it.name + "  x" + it.qty + "   " + (it.price * it.qty) + " " + (it.currency || ""), 16, y);
+    y += 7;
+  });
+  y += 3;
+  if (order.discount > 0) { doc.text("Discount: -" + order.discount, 14, y); y += 7; }
+  if (order.deliveryFee > 0) { doc.text("Delivery fee: " + order.deliveryFee, 14, y); y += 7; }
+  doc.setFontSize(13);
+  doc.text("Total: " + order.total, 14, y + 3);
+  doc.save("invoice-" + order.id.slice(-5) + ".pdf");
+}
+
+function MyOrders() {
+  const { user } = useAuth();
+  const [, , t] = useLanguage();
+  const { data: orders, loading } = useQuery("orders", "customerId", "==", user ? user.uid : null);
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>{t("myOrders")}</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {[...orders].reverse().map((o) => (
+            <div key={o.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <strong>طلب #{o.id.slice(-5)}</strong>
+                <StatusTag status={o.status} />
+              </div>
+              <OrderStepper status={o.status} />
+              {o.paymentMethod && <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>طريقة الدفع: {o.paymentMethod === "shamcash" ? "شام كاش" : "نقدي عند الاستلام"}</div>}
+              {o.items.map((it, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+                  <span>{it.name} × {it.qty}</span><span>{it.price * it.qty}</span>
+                </div>
+              ))}
+              {o.discount > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#22B573" }}><span>خصم {o.couponCode ? "(" + o.couponCode + ")" : ""}</span><span>-{o.discount}</span></div>}
+              {o.deliveryFee > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#888" }}><span>رسم التوصيل</span><span>{o.deliveryFee}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: "1px solid #eee", paddingTop: 6, marginTop: 6 }}>
+                <span>الإجمالي</span><span>{o.total}</span>
+              </div>
+              {o.status === "out_for_delivery" && o.deliveryRepId && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 13, color: "#888", marginBottom: 6 }}>📍 موقع المندوب الحي:</div>
+                  <LiveTrackingMap repId={o.deliveryRepId} />
+                </div>
+              )}
+              {o.status === "delivered" && <ProductReviewPrompt order={o} />}
+              {o.status === "delivered" && <ReturnRequestButton order={o} />}
+              <button onClick={() => downloadInvoicePdf(o)} style={{ ...btnGhost, fontSize: 12, padding: "6px 12px", marginTop: 8 }}>🧾 تحميل الفاتورة PDF</button>
+            </div>
+          ))}
+          {orders.length === 0 && <div style={{ color: "#888" }}>لا يوجد طلبات بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WishlistView({ onAdd, onOpenProduct }) {
+  const { profile } = useAuth();
+  const { data: products, loading } = useCollection("products");
+  const wishlist = (profile && profile.wishlist) || [];
+  const items = products.filter((p) => wishlist.includes(p.id));
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>المفضلة</h2>
+      {loading ? <Loading /> : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px,1fr))", gap: 14 }}>
+          {items.map((p) => (
+            <div key={p.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ height: 110, background: "#f4f4f4", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {p.image ? <img src={p.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ color: "#999", fontSize: 12 }}>لا صورة</span>}
+              </div>
+              <div style={{ padding: 10 }}>
+                <div style={{ fontWeight: 700 }}>{p.name}</div>
+                <div style={{ color: "#9B3FE8", fontWeight: 700 }}>{p.price} {p.currency}</div>
+                <button onClick={() => onAdd(p)} style={{ marginTop: 6, width: "100%", ...btnPrimary, padding: 8 }}>أضف للسلة</button>
+              </div>
+            </div>
+          ))}
+          {items.length === 0 && <div style={{ color: "#888" }}>لا يوجد منتجات مفضّلة بعد.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AddressBook() {
+  const { user, profile, refreshProfile } = useAuth();
+  const [newAddress, setNewAddress] = useState("");
+  const addresses = (profile && profile.addresses) || [];
+  const add = async () => {
+    if (!newAddress.trim()) return;
+    await db.collection("users").doc(user.uid).update({ addresses: firebase.firestore.FieldValue.arrayUnion(newAddress.trim()) });
+    setNewAddress(""); refreshProfile();
+  };
+  const remove = async (a) => {
+    await db.collection("users").doc(user.uid).update({ addresses: firebase.firestore.FieldValue.arrayRemove(a) });
+    refreshProfile();
+  };
+  return (
+    <div style={{ padding: 20, maxWidth: 420 }}>
+      <div style={{ background: "linear-gradient(135deg, #C48CF5, #9B3FE8)", color: "#fff", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, opacity: .9 }}>رصيد نقاط الولاء</div>
+        <div style={{ fontSize: 26, fontWeight: 800 }}>⭐ {(profile && profile.points) || 0}</div>
+      </div>
+      <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 13, color: "#888", marginBottom: 6 }}>ادعُ صديق — شارك هالكود، وبكسب الاثنين نقاط لما يسجّل فيه</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: 2, color: "var(--purple)" }}>{profile && profile.referralCode}</div>
+          <button onClick={() => navigator.clipboard && navigator.clipboard.writeText((profile && profile.referralCode) || "")} style={btnGhost}>نسخ</button>
+        </div>
+      </div>
+      <h2>عناويني</h2>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <input style={{ ...inputStyle, flex: 1 }} placeholder="عنوان جديد" value={newAddress} onChange={(e) => setNewAddress(e.target.value)} />
+        <button onClick={add} style={btnPrimary}>إضافة</button>
+      </div>
+      {addresses.map((a, i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff", border: "1px solid #eee", borderRadius: 10, padding: 12, marginBottom: 8 }}>
+          <span>{a}</span>
+          <button onClick={() => remove(a)} style={{ border: "none", background: "transparent", color: "red" }}>حذف</button>
+        </div>
+      ))}
+      {addresses.length === 0 && <div style={{ color: "#888" }}>ما في عناوين محفوظة بعد.</div>}
+      <div style={{ marginTop: 20 }}><ChangePasswordPanel /></div>
+    </div>
+  );
+}
+
+function MerchantStoreHeader({ merchantId, name, onBack }) {
+  const merchant = useDoc("users", merchantId);
+  return (
+    <div>
+      {merchant && merchant.bannerImage && (
+        <div style={{ height: 130, overflow: "hidden" }}>
+          <img src={merchant.bannerImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        </div>
+      )}
+      <div style={{ padding: "10px 20px 0" }}>
+        <button onClick={onBack} style={btnGhost}>← رجوع لكل المتاجر</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+          {merchant && merchant.logoImage && <img src={merchant.logoImage} alt="" style={{ width: 50, height: 50, borderRadius: "50%", objectFit: "cover", border: "2px solid #fff", boxShadow: "0 2px 8px rgba(0,0,0,.15)" }} />}
+          <div>
+            <h2 style={{ margin: 0 }}>متجر {name}</h2>
+            {merchant && merchant.storeDescription && <div style={{ color: "#888", fontSize: 13 }}>{merchant.storeDescription}</div>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CustomerApp() {
+  const { user, profile, logout } = useAuth();
+  const [lang, setLang, t] = useLanguage();
+  const [view, setView] = useState("shop");
+  const [cart, setCart] = useState(() => {
+    // Pick up any items added while browsing as a guest (before logging in).
+    const guestCart = loadGuestCart();
+    if (guestCart.length > 0) localStorage.removeItem("weinGuestCart");
+    return guestCart;
+  });
+  const [merchantView, setMerchantView] = useState(null); // { id, name }
+  const [savedCart, setSavedCart] = useState(null);
+  const addToCart = (product) => {
+    const cartKey = product.id + "|" + (product.variant || "");
+    setCart((prev) => {
+      const existing = prev.find((c) => c.cartKey === cartKey);
+      if (existing) return prev.map((c) => (c.cartKey === cartKey ? { ...c, qty: c.qty + 1 } : c));
+      return [...prev, { cartKey, productId: product.id, name: product.name, price: product.price, currency: product.currency || "SYP", merchantId: product.merchantId, variant: product.variant || null, qty: 1 }];
+    });
+  };
+  const updateQty = (cartKey, qty) => {
+    setCart((prev) => (qty <= 0 ? prev.filter((c) => c.cartKey !== cartKey) : prev.map((c) => (c.cartKey === cartKey ? { ...c, qty } : c))));
+  };
+  const cartCount = cart.reduce((s, c) => s + c.qty, 0);
+  const navBtn = (active) => ({ padding: "8px 16px", borderRadius: 999, border: "1px solid #eee", background: active ? "#000" : "#fff", color: active ? "#fff" : "#000" });
+
+  // "Abandoned cart" reminder: save the cart to Firestore whenever it
+  // changes, so if the person leaves and comes back (same account, any
+  // device) we can offer to restore it. This is an in-app reminder only —
+  // it can't notify someone who isn't using the app, which would need a
+  // scheduled Cloud Function plus push/SMS/email delivery.
+  useEffect(() => {
+    if (!user) return;
+    if (cart.length > 0) db.collection("carts").doc(user.uid).set({ items: cart, updatedAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+    else db.collection("carts").doc(user.uid).delete().catch(() => {});
+  }, [cart, user]);
+  useEffect(() => {
+    if (!user) return;
+    db.collection("carts").doc(user.uid).get().then((snap) => {
+      if (snap.exists && snap.data().items && snap.data().items.length > 0) setSavedCart(snap.data().items);
+    });
+  }, [user]);
+  const restoreCart = () => { setCart(savedCart); setSavedCart(null); setView("cart"); };
+
+  return (
+    <div style={{ minHeight: "100vh" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", background: "#fff", borderBottom: "1px solid #eee" }}>
+        <div style={{ fontWeight: 800 }}>أهلاً {profile && profile.name}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <LanguageToggle />
+          <DarkModeToggle />
+          <NotificationBell />
+          <button onClick={logout} style={{ border: "1px solid #000", background: "transparent", borderRadius: 999, padding: "6px 14px" }}>{t("logout")}</button>
+        </div>
+      </div>
+      {savedCart && cart.length === 0 && (
+        <div style={{ background: "#FFF6E5", borderBottom: "1px solid #F0D9A0", padding: "10px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, flexWrap: "wrap", gap: 8 }}>
+          <span>🛒 نسيت أغراض بسلتك من زيارة سابقة.</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={restoreCart} style={{ ...btnPrimary, padding: "6px 14px", fontSize: 12 }}>استعادة السلة</button>
+            <button onClick={() => setSavedCart(null)} style={{ ...btnGhost, padding: "6px 14px", fontSize: 12 }}>تجاهل</button>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 20px", background: "#fff", overflowX: "auto", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setView("shop"); setMerchantView(null); }} style={navBtn(view === "shop" && !merchantView)}>{t("shop")}</button>
+          <button onClick={() => setView("wishlist")} style={navBtn(view === "wishlist")}>{t("wishlist")}</button>
+          <button onClick={() => setView("orders")} style={navBtn(view === "orders")}>{t("myOrders")}</button>
+          <button onClick={() => setView("cases")} style={navBtn(view === "cases")}>{t("support")}</button>
+          <button onClick={() => setView("addresses")} style={navBtn(view === "addresses")}>{t("account")}</button>
+        </div>
+        <button className="cart-pulse" onClick={() => setView("cart")} style={{ background: "#9B3FE8", color: "#fff", border: "none", borderRadius: 999, padding: "8px 18px", fontWeight: 700, flexShrink: 0 }}>🛒 {t("cart")} ({cartCount})</button>
+      </div>
+      {merchantView && view === "shop" && <MerchantStoreHeader merchantId={merchantView.id} name={merchantView.name} onBack={() => setMerchantView(null)} />}
+      {view === "shop" && <Storefront onAdd={addToCart} onSelectMerchant={(id, name) => setMerchantView({ id, name })} merchantId={merchantView ? merchantView.id : null} />}
+      {view === "wishlist" && <WishlistView onAdd={addToCart} />}
+      {view === "cart" && <CartView cart={cart} onUpdateQty={updateQty} onPlaced={() => { setCart([]); setView("orders"); }} onBack={() => setView("shop")} />}
+      {view === "orders" && <MyOrders />}
+      {view === "cases" && <MyCases />}
+      {view === "addresses" && <AddressBook />}
+    </div>
+  );
+}
+
+/* ============================= Delivery dashboard ============================= */
+function DeliveryDashboard() {
+  const { user, profile, logout } = useAuth();
+  const [, , t] = useLanguage();
+  const { data: orders, loading } = useQuery("orders", "deliveryRepId", "==", user ? user.uid : null);
+  const loyalty = useAdminSettings("loyalty");
+  const myOrders = orders.filter((o) => o.status === "out_for_delivery" || o.status === "delivered");
+  const hasActiveDelivery = orders.some((o) => o.status === "out_for_delivery");
+  const markDelivered = (id, o) => {
+    db.collection("orders").doc(id).update({ status: "delivered" });
+    notifyUser(o.customerId, "تم توصيل طلبك", "طلبك #" + id.slice(-5) + " توصّل، بالهنا والشفا!");
+    // Award loyalty points based on the admin's configured rate.
+    if (loyalty && loyalty.pointsPerCurrency > 0) {
+      const earned = Math.floor(o.total / loyalty.pointsPerCurrency);
+      if (earned > 0) {
+        db.collection("users").doc(o.customerId).update({ points: firebase.firestore.FieldValue.increment(earned) });
+        notifyUser(o.customerId, "كسبت نقاط ولاء", "كسبت " + earned + " نقطة من هالطلب.");
+      }
+    }
+  };
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Shares this rep's live location while they have an active delivery, so
+  // customers can see the LiveTrackingMap update in real time.
+  useEffect(() => {
+    if (!hasActiveDelivery || !navigator.geolocation) return;
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => db.collection("users").doc(user.uid).update({ location: { lat: pos.coords.latitude, lng: pos.coords.longitude }, locationAt: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {}),
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 10000 }
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [hasActiveDelivery, user]);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F2F1EC" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", background: "#000", color: "#fff" }}>
+        <div style={{ fontWeight: 800 }}>{profile && profile.name} — {t("deliveryInterface")} {hasActiveDelivery && <span style={{ fontSize: 11, color: "#8BE6A8" }}>● {t("sharingLocation")}</span>}</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <LanguageToggle dark={true} />
+          <DarkModeToggle dark={true} />
+          <NotificationBell dark={true} />
+          <button onClick={() => setShowSettings((s) => !s)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>{showSettings ? t("deliveryMyOrders") : t("tabAccount")}</button>
+          <button onClick={logout} style={{ background: "transparent", border: "1px solid rgba(255,255,255,.3)", color: "#fff", borderRadius: 999, padding: "6px 16px" }}>{t("logoutFull")}</button>
+        </div>
+      </div>
+      {showSettings ? <ChangePasswordPanel /> : (
+      <div style={{ padding: 20 }}>
+        <h2>{t("deliveryMyOrders")}</h2>
+        {loading ? <Loading /> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {myOrders.map((o) => (
+              <div key={o.id} className="lift" style={{ background: "#fff", border: "1px solid #eee", borderRadius: 12, padding: 14 }}>
+                <div style={{ fontWeight: 700 }}>طلب #{o.id.slice(-5)}</div>
+                <div style={{ color: "#888", fontSize: 13 }}>{o.customerName} — {o.customerPhone}</div>
+                <div style={{ color: "#888", fontSize: 13 }}>العنوان: {o.address}</div>
+                <div style={{ fontWeight: 700, marginTop: 6 }}>{t("total")}: {o.total}</div>
+                {o.status === "out_for_delivery" && <button onClick={() => markDelivered(o.id, o)} style={{ marginTop: 10, ...btnPrimary }}>{t("markDelivered")}</button>}
+                {o.status === "delivered" && <span style={{ color: "#1F7A4C" }}>{t("markDelivered")} ✓</span>}
+              </div>
+            ))}
+            {myOrders.length === 0 && <div style={{ color: "#888" }}>لا يوجد طلبات مسندة إليك.</div>}
+          </div>
+        )}
+      </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================= App root ============================= */
+function loadGuestCart() {
+  try { return JSON.parse(localStorage.getItem("weinGuestCart") || "[]"); } catch (e) { return []; }
+}
+
+function GuestShell() {
+  const [, , t] = useLanguage();
+  const [view, setView] = useState("shop"); // "shop" | "login"
+  const [cart, setCart] = useState(loadGuestCart);
+  const [merchantView, setMerchantView] = useState(null);
+
+  useEffect(() => { localStorage.setItem("weinGuestCart", JSON.stringify(cart)); }, [cart]);
+
+  const addToCart = (product) => {
+    const cartKey = product.id + "|" + (product.variant || "");
+    setCart((prev) => {
+      const existing = prev.find((c) => c.cartKey === cartKey);
+      if (existing) return prev.map((c) => (c.cartKey === cartKey ? { ...c, qty: c.qty + 1 } : c));
+      return [...prev, { cartKey, productId: product.id, name: product.name, price: product.price, currency: product.currency || "SYP", merchantId: product.merchantId, variant: product.variant || null, qty: 1 }];
+    });
+  };
+  const cartCount = cart.reduce((s, c) => s + c.qty, 0);
+
+  if (view === "login") return <LoginScreen onBack={() => setView("shop")} />;
+
+  return (
+    <div style={{ minHeight: "100vh" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", background: "#fff", borderBottom: "1px solid #eee" }}>
+        <Logo size={30} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <LanguageToggle />
+          <button onClick={() => setView("login")} style={{ border: "1px solid #000", background: "transparent", borderRadius: 999, padding: "6px 14px", fontWeight: 700 }}>{t("login")}</button>
+        </div>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 20px", background: "#fff" }}>
+        <button className="cart-pulse" onClick={() => setView("login")} style={{ background: "#9B3FE8", color: "#fff", border: "none", borderRadius: 999, padding: "8px 18px", fontWeight: 700 }}>🛒 {t("cart")} ({cartCount})</button>
+      </div>
+      {merchantView && <MerchantStoreHeader merchantId={merchantView.id} name={merchantView.name} onBack={() => setMerchantView(null)} />}
+      <Storefront onAdd={addToCart} onSelectMerchant={(id, name) => setMerchantView({ id, name })} merchantId={merchantView ? merchantView.id : null} />
+    </div>
+  );
+}
+
+function App() {
+  const { user, profile, loading, logout, setMyPhone } = useAuth();
+  useEffect(() => { countVisitOnce(); }, []);
+  // Ask for notification permission automatically, once, right after the
+  // person is signed in — instead of making them dig for a button. Only
+  // fires when the browser hasn't been asked before and this account has
+  // no saved subscription yet, so it never nags a second time.
+  useEffect(() => {
+    if (!user || !profile) return;
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default" && !(profile.pushSubscriptions && profile.pushSubscriptions.length)) {
+      enablePushNotifications(user.uid, true);
+    }
+  }, [user, profile]);
+  if (loading) return <FullscreenMessage title="We-in" subtitle="جارِ التحميل…" />;
+  if (!user) return <GuestShell />;
+
+  if (profile && !profile.phone) return <RequirePhoneGate onSubmit={setMyPhone} onLogout={logout} />;
+  if (profile && profile.role === "admin") return <AdminDashboard onLogout={logout} />;
+  if (profile && profile.role === "staff") return <AdminDashboard onLogout={logout} permissions={profile.permissions || []} />;
+  if (profile && profile.role === "merchant") return <MerchantDashboard />;
+  if (profile && profile.role === "delivery") return <DeliveryDashboard />;
+  if (profile && profile.role === "customer") return <CustomerApp />;
+
+  return (
+    <FullscreenMessage title={"أهلاً " + ((profile && profile.name) || "")} subtitle={"دورك: " + ((profile && profile.role) || "غير محدد")}>
+      <button onClick={logout} style={btnGhost}>تسجيل الخروج</button>
+    </FullscreenMessage>
+  );
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null, info: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { this.setState({ info }); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ position: "fixed", inset: 0, background: "#B23A3A", color: "#fff", padding: 16, fontFamily: "monospace", fontSize: 12, direction: "ltr", textAlign: "left", whiteSpace: "pre-wrap", overflow: "auto", zIndex: 999999 }}>
+          RENDER ERROR:{"\n"}{String(this.state.error && (this.state.error.stack || this.state.error.message || this.state.error))}
+          {this.state.info && this.state.info.componentStack ? "\n\nComponent stack:" + this.state.info.componentStack : ""}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<ErrorBoundary><LanguageProvider><AuthProvider><App /></AuthProvider></LanguageProvider></ErrorBoundary>);
+</script>
+
+<script>
+  // We transform the JSX manually (instead of letting Babel Standalone
+  // auto-scan <script type="text/babel"> tags) so we can force the
+  // "classic" JSX runtime explicitly. Newer Babel defaults to the
+  // "automatic" runtime, which injects `import { jsx as _jsx } from
+  // "react/jsx-runtime"` into the compiled output — and since this isn't
+  // loaded as an ES module, that import crashes the whole page with
+  // "Cannot use import statement outside a module".
+  (function () {
+    var source = document.getElementById("app-source").textContent;
+    var output = Babel.transform(source, { presets: [["react", { runtime: "classic" }]] }).code;
+    var script = document.createElement("script");
+    script.text = output;
+    document.body.appendChild(script);
+  })();
+</script>
+</body>
+</html>
