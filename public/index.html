@@ -1215,12 +1215,13 @@ function StoreSettingsAdmin() {
   const [pointValue, setPointValue] = useState("100");
   const [deliveryFee, setDeliveryFee] = useState("0");
   const [freeThreshold, setFreeThreshold] = useState("0");
+  const [pricePerKm, setPricePerKm] = useState("0");
   const [referralPoints, setReferralPoints] = useState("100");
   const [qrUploading, setQrUploading] = useState(false);
   useEffect(() => { if (rate) setValue(String(rate)); }, [rate]);
   useEffect(() => { if (whatsapp && whatsapp.number) setWaNumber(whatsapp.number); }, [whatsapp]);
   useEffect(() => { if (loyalty) { if (loyalty.pointsPerCurrency) setPointsPerCurrency(String(loyalty.pointsPerCurrency)); if (loyalty.pointValue) setPointValue(String(loyalty.pointValue)); } }, [loyalty]);
-  useEffect(() => { if (delivery) { if (delivery.fee != null) setDeliveryFee(String(delivery.fee)); if (delivery.freeThreshold != null) setFreeThreshold(String(delivery.freeThreshold)); } }, [delivery]);
+  useEffect(() => { if (delivery) { if (delivery.fee != null) setDeliveryFee(String(delivery.fee)); if (delivery.freeThreshold != null) setFreeThreshold(String(delivery.freeThreshold)); if (delivery.pricePerKm != null) setPricePerKm(String(delivery.pricePerKm)); } }, [delivery]);
   useEffect(() => { if (referral && referral.points) setReferralPoints(String(referral.points)); }, [referral]);
 
   const save = async () => {
@@ -1238,8 +1239,8 @@ function StoreSettingsAdmin() {
     logAudit("تحديث إعدادات نقاط الولاء", pointsPerCurrency + " / " + pointValue);
   };
   const saveDelivery = async () => {
-    await db.collection("settings").doc("delivery").set({ fee: Number(deliveryFee) || 0, freeThreshold: Number(freeThreshold) || 0 }, { merge: true });
-    logAudit("تحديث سعر التوصيل", deliveryFee + " / حد مجاني: " + freeThreshold);
+    await db.collection("settings").doc("delivery").set({ fee: Number(deliveryFee) || 0, freeThreshold: Number(freeThreshold) || 0, pricePerKm: Number(pricePerKm) || 0 }, { merge: true });
+    logAudit("تحديث سعر التوصيل", deliveryFee + " / بالكيلومتر: " + pricePerKm + " / حد مجاني: " + freeThreshold);
   };
   const saveReferral = async () => {
     await db.collection("settings").doc("referral").set({ points: Number(referralPoints) || 0 }, { merge: true });
@@ -1270,9 +1271,12 @@ function StoreSettingsAdmin() {
       {msg && <div style={{ color: "#22B573", marginTop: 8 }}>{msg}</div>}
 
       <h2 style={{ marginTop: 32 }}>سعر التوصيل</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13 }}>رسم توصيل ثابت يضاف لكل طلب، مع حد أدنى للمبلغ يصير فوقه التوصيل مجاني (0 = بلا حد).</p>
+      <p style={{ color: "var(--muted)", fontSize: 13 }}>سعر الكيلومتر: إذا حددته، بيحتسب سعر التوصيل تلقائياً حسب المسافة الحقيقية بين موقع التاجر وموقع الزبون (لازم الاثنين يكونوا حددوا موقعهم على الخريطة). إذا الموقعين مو محددين، بينرجع للرسم الثابت.</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <label style={{ fontSize: 13 }}>رسم التوصيل
+        <label style={{ fontSize: 13 }}>سعر التوصيل لكل كيلومتر (اختياري، للحساب الأوتوماتيكي)
+          <input type="number" style={{ ...inputStyle, width: "100%" }} value={pricePerKm} onChange={(e) => setPricePerKm(e.target.value)} />
+        </label>
+        <label style={{ fontSize: 13 }}>رسم توصيل ثابت (يُستخدم إذا ما في سعر بالكيلومتر، أو ما تحدد الموقعين)
           <input type="number" style={{ ...inputStyle, width: "100%" }} value={deliveryFee} onChange={(e) => setDeliveryFee(e.target.value)} />
         </label>
         <label style={{ fontSize: 13 }}>التوصيل مجاني فوق مبلغ (اختياري)
@@ -1648,6 +1652,71 @@ function NotificationBell({ dark }) {
 }
 
 /* ============================= Shared: live GPS tracking map ============================= */
+// Straight-line distance between two lat/lng points, in kilometers (haversine formula).
+function distanceKm(lat1, lng1, lat2, lng2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// A tappable map for picking a real location (merchant's shop, or a
+// customer's delivery address) — used to auto-calculate delivery distance.
+function LocationPicker({ value, onChange, height }) {
+  const mapRef = React.useRef(null);
+  const leafletMapRef = React.useRef(null);
+  const markerRef = React.useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    loadLeafletCss();
+    loadScriptOnce("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js").then(() => setReady(true)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!ready || !mapRef.current || leafletMapRef.current) return;
+    const start = value && value.lat ? [value.lat, value.lng] : [33.5138, 36.2765];
+    const map = L.map(mapRef.current).setView(start, value && value.lat ? 15 : 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "© OpenStreetMap" }).addTo(map);
+    const setMarker = (lat, lng) => {
+      if (markerRef.current) markerRef.current.setLatLng([lat, lng]);
+      else markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(map).on("dragend", (e) => {
+        const p = e.target.getLatLng(); onChange({ lat: p.lat, lng: p.lng });
+      });
+    };
+    if (value && value.lat) setMarker(value.lat, value.lng);
+    map.on("click", (e) => { setMarker(e.latlng.lat, e.latlng.lng); onChange({ lat: e.latlng.lat, lng: e.latlng.lng }); });
+    leafletMapRef.current = map;
+  }, [ready]);
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const { latitude, longitude } = pos.coords;
+      onChange({ lat: latitude, lng: longitude });
+      if (leafletMapRef.current) {
+        leafletMapRef.current.setView([latitude, longitude], 16);
+        if (markerRef.current) markerRef.current.setLatLng([latitude, longitude]);
+        else markerRef.current = L.marker([latitude, longitude], { draggable: true }).addTo(leafletMapRef.current).on("dragend", (e) => {
+          const p = e.target.getLatLng(); onChange({ lat: p.lat, lng: p.lng });
+        });
+      }
+    });
+  };
+
+  return (
+    <div>
+      <div ref={mapRef} style={{ width: "100%", height: height || 220, borderRadius: 12, overflow: "hidden", border: "1px solid var(--border)" }}></div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>دوس على الخريطة أو اسحب العلامة لتحديد الموقع بدقة.</span>
+        <button type="button" onClick={useMyLocation} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>📍 موقعي الحالي</button>
+      </div>
+    </div>
+  );
+}
+
 function LiveTrackingMap({ repId }) {
   const rep = useDoc("users", repId);
   const mapRef = React.useRef(null);
@@ -2427,9 +2496,11 @@ function MerchantReviews() {
 function MerchantStoreProfile() {
   const { user, profile, refreshProfile } = useAuth();
   const [description, setDescription] = useState((profile && profile.storeDescription) || "");
+  const [location, setLocation] = useState((profile && profile.storeLocation) || null);
   const [busyBanner, setBusyBanner] = useState(false);
   const [busyLogo, setBusyLogo] = useState(false);
   const [msg, setMsg] = useState("");
+  const [locMsg, setLocMsg] = useState("");
 
   const uploadBanner = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -2456,6 +2527,12 @@ function MerchantStoreProfile() {
     refreshProfile();
     setMsg("تم الحفظ."); setTimeout(() => setMsg(""), 2000);
   };
+  const saveLocation = async () => {
+    if (!location) return;
+    await db.collection("users").doc(user.uid).update({ storeLocation: location });
+    refreshProfile();
+    setLocMsg("تم حفظ موقع المتجر ✓"); setTimeout(() => setLocMsg(""), 2500);
+  };
 
   return (
     <div style={{ padding: 20, maxWidth: 480 }}>
@@ -2480,6 +2557,12 @@ function MerchantStoreProfile() {
       <textarea style={{ ...inputStyle, width: "100%", minHeight: 60 }} placeholder="مثال: أفضل الملابس الرجالية بأسعار منافسة" value={description} onChange={(e) => setDescription(e.target.value)} />
       <button onClick={saveDescription} style={{ ...btnPrimary, marginTop: 8 }}>حفظ الوصف</button>
       {msg && <div style={{ color: "#22B573", marginTop: 8 }}>{msg}</div>}
+
+      <h3 style={{ marginTop: 20 }}>موقع متجرك الحقيقي على الخريطة</h3>
+      <p style={{ color: "var(--muted)", fontSize: 13 }}>لازم تحدده حتى يحتسب سعر التوصيل تلقائياً حسب المسافة الحقيقية للزبون.</p>
+      <LocationPicker value={location} onChange={setLocation} />
+      <button onClick={saveLocation} disabled={!location} style={{ ...btnPrimary, marginTop: 8 }}>حفظ موقع المتجر</button>
+      {locMsg && <div style={{ color: "#22B573", marginTop: 8 }}>{locMsg}</div>}
     </div>
   );
 }
@@ -2780,6 +2863,8 @@ function CartView({ cart, onUpdateQty, onPlaced, onBack }) {
   const savedAddresses = (profile && profile.addresses) || [];
   const myPoints = (profile && profile.points) || 0;
   const [address, setAddress] = useState("");
+  const [deliveryLocation, setDeliveryLocation] = useState((profile && profile.lastDeliveryLocation) || null);
+  const [merchantLocations, setMerchantLocations] = useState({});
   const [saveAddress, setSaveAddress] = useState(false);
   const [paymentNote, setPaymentNote] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("shamcash");
@@ -2791,15 +2876,36 @@ function CartView({ cart, onUpdateQty, onPlaced, onBack }) {
   const [couponCode, setCouponCode] = useState("");
   const [coupon, setCoupon] = useState(null);
   const [couponMsg, setCouponMsg] = useState("");
+
+  // Fetch each cart merchant's real shop location (once per merchant) so we
+  // can auto-calculate delivery distance once the customer picks theirs too.
+  useEffect(() => {
+    const ids = [...new Set(cart.map((c) => c.merchantId))];
+    ids.forEach((id) => {
+      if (id in merchantLocations) return;
+      db.collection("users").doc(id).get().then((snap) => {
+        setMerchantLocations((prev) => ({ ...prev, [id]: (snap.exists && snap.data().storeLocation) || null }));
+      }).catch(() => {});
+    });
+  }, [cart]);
+
   const subtotal = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const couponDiscount = coupon ? (coupon.type === "percent" ? Math.round(subtotal * coupon.value / 100) : Math.min(coupon.value, subtotal)) : 0;
   const pointValue = (loyalty && loyalty.pointValue) || 0;
   const pointsDiscount = usePoints && pointValue ? Math.min(Math.floor(myPoints / 100) * pointValue, subtotal - couponDiscount) : 0;
   const discount = couponDiscount + pointsDiscount;
   const afterDiscount = subtotal - discount;
-  const deliveryFee = deliverySettings && deliverySettings.fee
-    ? (deliverySettings.freeThreshold && afterDiscount >= deliverySettings.freeThreshold ? 0 : deliverySettings.fee)
-    : 0;
+
+  // Distance-based fee: only kicks in when the admin set a per-km price AND
+  // the customer picked their location AND we know every cart merchant's
+  // real shop location — otherwise it falls back to the flat delivery fee.
+  const merchantIds = [...new Set(cart.map((c) => c.merchantId))];
+  const knownDistances = merchantIds.map((id) => merchantLocations[id]).filter((loc) => loc && loc.lat);
+  const distanceFee = (deliverySettings && deliverySettings.pricePerKm && deliveryLocation && knownDistances.length === merchantIds.length && merchantIds.length > 0)
+    ? Math.round((knownDistances.reduce((s, loc) => s + distanceKm(loc.lat, loc.lng, deliveryLocation.lat, deliveryLocation.lng), 0) / knownDistances.length) * deliverySettings.pricePerKm)
+    : null;
+  const rawFee = distanceFee != null ? distanceFee : ((deliverySettings && deliverySettings.fee) || 0);
+  const deliveryFee = rawFee && deliverySettings && deliverySettings.freeThreshold && afterDiscount >= deliverySettings.freeThreshold ? 0 : rawFee;
   const total = afterDiscount + deliveryFee;
 
   const applyCoupon = async () => {
@@ -2829,11 +2935,10 @@ function CartView({ cart, onUpdateQty, onPlaced, onBack }) {
     if (paymentMethod === "shamcash" && !proofImage) { setError("ارفق صورة إثبات تحويل شام كاش."); return; }
     setBusy(true);
     try {
-      const merchantIds = [...new Set(cart.map((c) => c.merchantId))];
       const pointsUsed = usePoints && pointsDiscount > 0 ? Math.floor(pointsDiscount / pointValue) * 100 : 0;
       const orderRef = await db.collection("orders").add({
         customerId: user.uid, customerName: (profile && profile.name) || "", customerPhone: (profile && profile.phone) || "",
-        items: cart, merchantIds, subtotal, discount, couponCode: coupon ? coupon.code : null, pointsUsed, deliveryFee, total,
+        items: cart, merchantIds, subtotal, discount, couponCode: coupon ? coupon.code : null, pointsUsed, deliveryFee, deliveryLocation: deliveryLocation || null, total,
         address: address.trim(), paymentNote: paymentNote.trim(), paymentMethod, paymentProofImage: paymentMethod === "shamcash" ? proofImage : "",
         status: "awaiting_payment_review", deliveryRepId: null,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -2846,6 +2951,9 @@ function CartView({ cart, onUpdateQty, onPlaced, onBack }) {
       if (saveAddress && address.trim() && !savedAddresses.includes(address.trim())) {
         await db.collection("users").doc(user.uid).update({ addresses: firebase.firestore.FieldValue.arrayUnion(address.trim()) });
         refreshProfile();
+      }
+      if (deliveryLocation) {
+        db.collection("users").doc(user.uid).update({ lastDeliveryLocation: deliveryLocation }).catch(() => {});
       }
       // Opens WhatsApp with a pre-filled order confirmation message to the
       // platform's WhatsApp number (set by the admin in settings).
@@ -2934,6 +3042,14 @@ function CartView({ cart, onUpdateQty, onPlaced, onBack }) {
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--muted)", marginTop: 6 }}>
             <input type="checkbox" checked={saveAddress} onChange={(e) => setSaveAddress(e.target.checked)} /> احفظ هالعنوان لطلبات لاحقة
           </label>
+
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 6 }}>حدد موقعك الحقيقي على الخريطة (بيحسب سعر التوصيل تلقائياً حسب المسافة):</div>
+            <LocationPicker value={deliveryLocation} onChange={setDeliveryLocation} height={180} />
+            {distanceFee != null && <div style={{ fontSize: 12, color: "#22B573", marginTop: 6 }}>✓ محسوب حسب المسافة: {distanceFee} {(cart[0] && cart[0].currency) || ""}</div>}
+            {distanceFee == null && deliveryLocation && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>ما قدرنا نحسب المسافة تلقائياً (التاجر لسا ما حدد موقع متجره) — رح يُطبّق الرسم الثابت.</div>}
+          </div>
+
           <input style={{ ...inputStyle, width: "100%", marginTop: 8 }} placeholder="ملاحظة إضافية (اختياري)" value={paymentNote} onChange={(e) => setPaymentNote(e.target.value)} />
           {error && <div style={{ color: "red", marginTop: 8 }}>{error}</div>}
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
