@@ -101,6 +101,8 @@
 
 <script>
   (function () {
+    if (window.__weinAppBooted) return;
+    window.__weinAppBooted = true;
     var source = document.getElementById("app-source").textContent;
     var script = document.createElement("script");
     script.text = source;
